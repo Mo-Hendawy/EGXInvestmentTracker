@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Chart/Stock icon -->
+    <group android:translateX="22" android:translateY="22">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M3,13h2v10h-2zM10,8h2v15h-2zM17,4h2v19h-2zM24,9h2v14h-2zM31,6h2v17h-2zM38,11h2v12h-2zM45,2h2v21h-2zM52,7h2v16h-2zM59,13h2v10h-2z"/>
+        <path
+            android:fillColor="#D4AF37"
+            android:pathData="M0,25L64,25L64,27L0,27Z"/>
+        <path
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2"
+            android:pathData="M2,18L15,12L28,8L41,14L54,6L62,10"
+            android:fillColor="#00000000"/>
+    </group>
+</vector>

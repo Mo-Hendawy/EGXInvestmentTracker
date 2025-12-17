@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="gold">#D4AF37</color>
+    <color name="gold_light">#E8D48B</color>
+    <color name="gold_dark">#AA8C2C</color>
+    
+    <color name="nile_blue">#1E5B8D</color>
+    <color name="nile_blue_dark">#0D3B5C</color>
+    <color name="nile_blue_light">#4A8CC4</color>
+    
+    <color name="profit_green">#00C853</color>
+    <color name="loss_red">#FF1744</color>
+    
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="background">#F8F9FA</color>
+</resources>

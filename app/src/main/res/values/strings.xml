@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EGX Portfolio Tracker</string>
+    <string name="dashboard">Dashboard</string>
+    <string name="portfolio">Portfolio</string>
+    <string name="add_stock">Add Stock</string>
+    <string name="settings">Settings</string>
+    <string name="search_stocks">Search stocks…</string>
+    <string name="total_value">Total Value</string>
+    <string name="profit_loss">Profit/Loss</string>
+    <string name="shares">Shares</string>
+    <string name="avg_cost">Average Cost</string>
+    <string name="current_price">Current Price</string>
+    <string name="market_value">Market Value</string>
+</resources>
