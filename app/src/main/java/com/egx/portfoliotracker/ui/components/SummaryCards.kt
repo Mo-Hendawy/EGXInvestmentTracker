@@ -22,12 +22,23 @@ fun PortfolioValueCard(
     modifier: Modifier = Modifier
 ) {
     val profitColor = if (summary.totalProfitLoss >= 0) ProfitGreen else LossRed
+    // Use dynamic background color based on profit/loss for better visibility
+    val cardBackgroundColor = if (summary.totalProfitLoss >= 0) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.errorContainer
+    }
+    val cardTextColor = if (summary.totalProfitLoss >= 0) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onErrorContainer
+    }
     
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primary
+            containerColor = cardBackgroundColor
         )
     ) {
         Column(
@@ -38,7 +49,7 @@ fun PortfolioValueCard(
             Text(
                 text = "Total Portfolio Value",
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                color = cardTextColor.copy(alpha = 0.8f)
             )
             
             Spacer(modifier = Modifier.height(8.dp))
@@ -49,7 +60,7 @@ fun PortfolioValueCard(
                 isBlurred = isBlurred,
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimary
+                color = cardTextColor
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -62,14 +73,14 @@ fun PortfolioValueCard(
                     Text(
                         text = "Total Cost",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                        color = cardTextColor.copy(alpha = 0.7f)
                     )
                     BlurredAmountNoDecimals(
                         amount = summary.totalCost,
                         currency = "EGP",
                         isBlurred = isBlurred,
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        color = cardTextColor
                     )
                 }
                 
@@ -77,7 +88,7 @@ fun PortfolioValueCard(
                     Text(
                         text = "Profit/Loss",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
+                        color = cardTextColor.copy(alpha = 0.7f)
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(

@@ -1,11 +1,17 @@
 package com.egx.portfoliotracker.data.repository
 
+import com.egx.portfoliotracker.data.local.CertificateDao
 import com.egx.portfoliotracker.data.local.CostHistoryDao
 import com.egx.portfoliotracker.data.local.DividendDao
+import com.egx.portfoliotracker.data.local.ExpenseDao
 import com.egx.portfoliotracker.data.local.HoldingDao
 import com.egx.portfoliotracker.data.local.StockDao
 import com.egx.portfoliotracker.data.local.TransactionDao
 import com.egx.portfoliotracker.data.model.*
+import com.egx.portfoliotracker.data.model.Certificate
+import com.egx.portfoliotracker.data.model.CertificateStatus
+import com.egx.portfoliotracker.data.model.CertificateIncomeDetail
+import com.egx.portfoliotracker.data.model.MonthlyCertificateIncome
 import com.egx.portfoliotracker.data.remote.StockPriceResult
 import com.egx.portfoliotracker.data.remote.StockPriceService
 import kotlinx.coroutines.flow.Flow
@@ -21,6 +27,8 @@ class PortfolioRepository @Inject constructor(
     private val transactionDao: TransactionDao,
     private val costHistoryDao: CostHistoryDao,
     private val dividendDao: DividendDao,
+    private val certificateDao: CertificateDao,
+    private val expenseDao: ExpenseDao,
     private val stockPriceService: StockPriceService
 ) {
     // Holdings
@@ -69,6 +77,10 @@ class PortfolioRepository @Inject constructor(
     
     suspend fun updateHolding(holding: Holding) {
         holdingDao.updateHolding(holding.copy(updatedAt = System.currentTimeMillis()))
+    }
+    
+    suspend fun updateHoldingTargetPercentage(holdingId: String, targetPercentage: Double?) {
+        holdingDao.updateTargetPercentage(holdingId, targetPercentage, System.currentTimeMillis())
     }
     
     suspend fun deleteHolding(holding: Holding) {
@@ -387,6 +399,32 @@ class PortfolioRepository @Inject constructor(
     
     suspend fun initializeStocks() {
         stockDao.insertStocks(EGXStocks.stocks)
+        // Sync stock names in existing holdings
+        syncStockNames()
+    }
+    
+    /**
+     * Update stock names in existing holdings to match current Stock table
+     */
+    suspend fun syncStockNames() {
+        val holdings = holdingDao.getAllHoldings().first()
+        val stocks = stockDao.getAllStocks().first()
+        val stockMap = stocks.associateBy { it.symbol }
+        
+        for (holding in holdings) {
+            val stock = stockMap[holding.stockSymbol]
+            if (stock != null && 
+                (holding.stockNameEn != stock.nameEn || 
+                 holding.stockNameAr != stock.nameAr || 
+                 holding.sector != stock.sector)) {
+                holdingDao.updateStockName(
+                    symbol = holding.stockSymbol,
+                    nameEn = stock.nameEn,
+                    nameAr = stock.nameAr,
+                    sector = stock.sector
+                )
+            }
+        }
     }
     
     // Transactions
@@ -495,5 +533,176 @@ class PortfolioRepository @Inject constructor(
                 }
                 .sortedByDescending { it.weight }
         }
+    }
+    
+    // ============ CERTIFICATES ============
+    
+    fun getAllCertificates(): Flow<List<Certificate>> = certificateDao.getAllCertificates()
+    
+    suspend fun getCertificateById(id: String): Certificate? = certificateDao.getCertificateById(id)
+    
+    fun getCertificatesByStatus(status: CertificateStatus): Flow<List<Certificate>> = 
+        certificateDao.getCertificatesByStatus(status)
+    
+    fun getCertificatesByBank(bankName: String): Flow<List<Certificate>> = 
+        certificateDao.getCertificatesByBank(bankName)
+    
+    suspend fun addCertificate(certificate: Certificate) {
+        certificateDao.insertCertificate(certificate)
+    }
+    
+    suspend fun updateCertificate(certificate: Certificate) {
+        certificateDao.updateCertificate(certificate)
+    }
+    
+    suspend fun deleteCertificate(certificate: Certificate) {
+        certificateDao.deleteCertificate(certificate)
+    }
+    
+    suspend fun deleteCertificateById(id: String) {
+        certificateDao.deleteCertificateById(id)
+    }
+    
+    fun getTotalCertificatesValue(status: CertificateStatus = CertificateStatus.ACTIVE): Flow<Double?> = 
+        certificateDao.getTotalCertificatesValue(status)
+    
+    fun getTotalMonthlyIncome(status: CertificateStatus = CertificateStatus.ACTIVE): Flow<Double?> = 
+        certificateDao.getTotalMonthlyIncome(status)
+    
+    fun getCertificatesCount(status: CertificateStatus = CertificateStatus.ACTIVE): Flow<Int> = 
+        certificateDao.getCertificatesCount(status)
+    
+    suspend fun getUpcomingMaturities(limit: Int = 10): List<Certificate> {
+        val thirtyDaysFromNow = System.currentTimeMillis() + (30L * 24 * 60 * 60 * 1000)
+        val certificates = certificateDao.getCertificatesByStatusSync(CertificateStatus.ACTIVE)
+        return certificates
+            .filter { it.maturityDate <= thirtyDaysFromNow }
+            .sortedBy { it.maturityDate }
+            .take(limit)
+    }
+    
+    /**
+     * Get monthly income summary for all certificates
+     */
+    suspend fun getMonthlyCertificateIncome(year: Int, month: Int): MonthlyCertificateIncome {
+        val certificates = certificateDao.getAllCertificates().first()
+        val certificateDetails = certificates
+            .mapNotNull { cert ->
+                val income = cert.getMonthlyIncomeForMonth(year, month)
+                if (income > 0) {
+                    val dueDate = cert.getInterestDueDateForMonth(year, month)
+                    CertificateIncomeDetail(
+                        certificateId = cert.id,
+                        certificateNumber = cert.certificateNumber,
+                        bankName = cert.bankName,
+                        amount = income,
+                        dueDate = dueDate ?: 0L
+                    )
+                } else null
+            }
+        
+        return MonthlyCertificateIncome(
+            year = year,
+            month = month,
+            totalIncome = certificateDetails.sumOf { it.amount },
+            certificates = certificateDetails
+        )
+    }
+    
+    /**
+     * Get monthly income for a range of months
+     */
+    suspend fun getMonthlyCertificateIncomeRange(startYear: Int, startMonth: Int, endYear: Int, endMonth: Int): List<MonthlyCertificateIncome> {
+        val certificates = certificateDao.getAllCertificates().first()
+        val months = mutableListOf<MonthlyCertificateIncome>()
+        
+        var currentYear = startYear
+        var currentMonth = startMonth
+        
+        while (currentYear < endYear || (currentYear == endYear && currentMonth <= endMonth)) {
+            val certificateDetails = certificates
+                .mapNotNull { cert ->
+                    val income = cert.getMonthlyIncomeForMonth(currentYear, currentMonth)
+                    if (income > 0) {
+                        val dueDate = cert.getInterestDueDateForMonth(currentYear, currentMonth)
+                        CertificateIncomeDetail(
+                            certificateId = cert.id,
+                            bankName = cert.bankName,
+                            amount = income,
+                            dueDate = dueDate ?: 0L
+                        )
+                    } else null
+                }
+            
+            months.add(
+                MonthlyCertificateIncome(
+                    year = currentYear,
+                    month = currentMonth,
+                    totalIncome = certificateDetails.sumOf { it.amount },
+                    certificates = certificateDetails
+                )
+            )
+            
+            // Move to next month
+            currentMonth++
+            if (currentMonth > 12) {
+                currentMonth = 1
+                currentYear++
+            }
+        }
+        
+        return months
+    }
+    
+    /**
+     * Update bank name for all certificates
+     */
+    suspend fun updateAllCertificatesBankName(oldBankName: String, newBankName: String) {
+        certificateDao.updateBankName(oldBankName, newBankName)
+    }
+    
+    // ========== EXPENSES ==========
+    
+    fun getAllExpenses(): Flow<List<Expense>> = expenseDao.getAllExpenses()
+    
+    suspend fun getExpenseById(id: String): Expense? = expenseDao.getExpenseById(id)
+    
+    fun getExpensesByDateRange(startDate: Long, endDate: Long): Flow<List<Expense>> = 
+        expenseDao.getExpensesByDateRange(startDate, endDate)
+    
+    fun getExpensesByCategory(category: String): Flow<List<Expense>> = 
+        expenseDao.getExpensesByCategory(category)
+    
+    fun getExpensesByCategoryAndDateRange(category: String, startDate: Long, endDate: Long): Flow<List<Expense>> = 
+        expenseDao.getExpensesByCategoryAndDateRange(category, startDate, endDate)
+    
+    fun getAllCategories(): Flow<List<String>> = expenseDao.getAllCategories()
+    
+    suspend fun getTotalExpensesByDateRange(startDate: Long, endDate: Long): Double = 
+        expenseDao.getTotalExpensesByDateRange(startDate, endDate) ?: 0.0
+    
+    suspend fun getCategoryTotalsByDateRange(startDate: Long, endDate: Long): List<com.egx.portfoliotracker.data.local.CategoryTotal> = 
+        expenseDao.getCategoryTotalsByDateRange(startDate, endDate)
+    
+    suspend fun getDailyExpensesByDateRange(startDate: Long, endDate: Long): List<com.egx.portfoliotracker.data.local.DailyExpense> = 
+        expenseDao.getDailyExpensesByDateRange(startDate, endDate)
+    
+    suspend fun getMonthlyExpensesByDateRange(startDate: Long, endDate: Long): List<com.egx.portfoliotracker.data.local.MonthlyExpense> = 
+        expenseDao.getMonthlyExpensesByDateRange(startDate, endDate)
+    
+    suspend fun addExpense(expense: Expense) {
+        expenseDao.insertExpense(expense)
+    }
+    
+    suspend fun updateExpense(expense: Expense) {
+        expenseDao.updateExpense(expense)
+    }
+    
+    suspend fun deleteExpense(expense: Expense) {
+        expenseDao.deleteExpense(expense)
+    }
+    
+    suspend fun deleteExpenseById(id: String) {
+        expenseDao.deleteExpenseById(id)
     }
 }

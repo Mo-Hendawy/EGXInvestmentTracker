@@ -66,3 +66,5 @@ If you have questions about this Privacy Policy, please contact us at:
 ---
 
 **Note**: Replace [DATE], [YOUR_EMAIL], and [YOUR_WEBSITE] with your actual information before publishing.
+
+

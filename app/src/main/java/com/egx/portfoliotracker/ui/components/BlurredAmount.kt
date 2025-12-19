@@ -104,3 +104,5 @@ fun BlurredPercentage(
         fontSize = fontSize
     )
 }
+
+

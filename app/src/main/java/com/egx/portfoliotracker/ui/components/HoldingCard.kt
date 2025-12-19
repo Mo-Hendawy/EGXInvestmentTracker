@@ -27,6 +27,7 @@ fun HoldingCard(
     holding: Holding,
     onClick: () -> Unit,
     isBlurred: Boolean = false,
+    totalPortfolioValue: Double = 0.0,
     modifier: Modifier = Modifier
 ) {
     val profitColor by animateColorAsState(
@@ -144,6 +145,55 @@ fun HoldingCard(
                 
                 if (holding.sector.isNotEmpty()) {
                     SectorChip(sector = holding.sector)
+                }
+            }
+            
+            // Target percentage indicator
+            if (holding.targetPercentage != null && totalPortfolioValue > 0) {
+                Spacer(modifier = Modifier.height(8.dp))
+                val currentPercentage = (holding.marketValue / totalPortfolioValue) * 100
+                val difference = currentPercentage - holding.targetPercentage
+                val isBelowTarget = difference < -0.5 // 0.5% threshold to avoid flickering
+                val isAboveTarget = difference > 0.5
+                
+                if (isBelowTarget || isAboveTarget) {
+                    val targetColor = if (isBelowTarget) ProfitGreen else Color(0xFFFF9800) // Orange
+                    val targetIcon = if (isBelowTarget) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward
+                    
+                    Surface(
+                        color = targetColor.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = targetIcon,
+                                    contentDescription = null,
+                                    tint = targetColor,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isBlurred) "Target: ••%" else "Target: ${String.format("%.1f", holding.targetPercentage)}%",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = targetColor
+                                )
+                            }
+                            Text(
+                                text = if (isBlurred) "••%" else "${String.format("%.1f", currentPercentage)}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             }
             

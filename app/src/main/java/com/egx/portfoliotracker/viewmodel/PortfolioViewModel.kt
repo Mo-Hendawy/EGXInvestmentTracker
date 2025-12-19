@@ -48,6 +48,16 @@ class PortfolioViewModel @Inject constructor(
     val allDividends: StateFlow<List<Dividend>> = repository.getAllDividends()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     
+    // Certificates
+    val certificates: StateFlow<List<Certificate>> = repository.getAllCertificates()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    
+    val totalCertificatesValue: StateFlow<Double?> = repository.getTotalCertificatesValue()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    
+    val totalMonthlyIncome: StateFlow<Double?> = repository.getTotalMonthlyIncome()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    
     // Performance breakdown
     private val _performanceBreakdown = MutableStateFlow<List<PerformanceBreakdown>>(emptyList())
     val performanceBreakdown: StateFlow<List<PerformanceBreakdown>> = _performanceBreakdown.asStateFlow()
@@ -86,6 +96,8 @@ class PortfolioViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             repository.initializeStocks()
+            // Update any CIB certificates to HSBC
+            repository.updateAllCertificatesBankName("Commercial International Bank (CIB)", "HSBC")
         }
         
         refreshAllPrices()
@@ -238,6 +250,12 @@ class PortfolioViewModel @Inject constructor(
         }
     }
     
+    fun updateHoldingTargetPercentage(holdingId: String, targetPercentage: Double?) {
+        viewModelScope.launch {
+            repository.updateHoldingTargetPercentage(holdingId, targetPercentage)
+        }
+    }
+    
     fun updateHoldingPrice(symbol: String, newPrice: Double) {
         viewModelScope.launch {
             repository.updateCurrentPrice(symbol, newPrice)
@@ -318,6 +336,321 @@ class PortfolioViewModel @Inject constructor(
     fun getHoldingsBySector(sector: String): Flow<List<Holding>> {
         return repository.getHoldingsBySector(sector)
     }
+    
+    // ============ CERTIFICATES ============
+    
+    suspend fun addCertificate(certificate: Certificate) {
+        viewModelScope.launch {
+            repository.addCertificate(certificate)
+        }
+    }
+    
+    suspend fun updateCertificate(certificate: Certificate) {
+        viewModelScope.launch {
+            repository.updateCertificate(certificate)
+        }
+    }
+    
+    suspend fun deleteCertificate(certificate: Certificate) {
+        viewModelScope.launch {
+            repository.deleteCertificate(certificate)
+        }
+    }
+    
+    suspend fun getMonthlyCertificateIncome(year: Int, month: Int): MonthlyCertificateIncome {
+        return repository.getMonthlyCertificateIncome(year, month)
+    }
+    
+    suspend fun getMonthlyCertificateIncomeRange(startYear: Int, startMonth: Int, endYear: Int, endMonth: Int): List<MonthlyCertificateIncome> {
+        return repository.getMonthlyCertificateIncomeRange(startYear, startMonth, endYear, endMonth)
+    }
+    
+    suspend fun getUpcomingMaturities(limit: Int = 10): List<Certificate> {
+        return repository.getUpcomingMaturities(limit)
+    }
+    
+    /**
+     * Get daily credit schedule for current month
+     * Shows which days have credits and how much
+     */
+    suspend fun getDailyCreditScheduleForCurrentMonth(): List<DailyCredit> {
+        val calendar = java.util.Calendar.getInstance()
+        val currentYear = calendar.get(java.util.Calendar.YEAR)
+        val currentMonth = calendar.get(java.util.Calendar.MONTH) + 1
+        
+        val allCertificates = repository.getAllCertificates().first()
+        val dailyCredits = mutableMapOf<Int, MutableList<CertificateIncomeDetail>>()
+        
+        allCertificates.forEach { cert ->
+            val income = cert.getMonthlyIncomeForMonth(currentYear, currentMonth)
+            if (income > 0 && cert.interestPaymentFrequency == InterestFrequency.MONTHLY) {
+                val paymentDay = cert.getPaymentDayOfMonth()
+                val dueDate = cert.getInterestDueDateForMonth(currentYear, currentMonth)
+                
+                val detail = CertificateIncomeDetail(
+                    certificateId = cert.id,
+                    certificateNumber = cert.certificateNumber,
+                    bankName = cert.bankName,
+                    amount = income,
+                    dueDate = dueDate ?: 0L
+                )
+                
+                dailyCredits.getOrPut(paymentDay) { mutableListOf() }.add(detail)
+            }
+        }
+        
+        return dailyCredits.map { (day, details) ->
+            DailyCredit(
+                day = day,
+                totalAmount = details.sumOf { it.amount },
+                certificates = details
+            )
+        }.sortedBy { it.day }
+    }
+    
+    /**
+     * Bulk import certificates - useful for importing from statements
+     */
+    suspend fun importCertificates(certificates: List<Certificate>) {
+        viewModelScope.launch {
+            certificates.forEach { cert ->
+                repository.addCertificate(cert)
+            }
+        }
+    }
+    
+    /**
+     * Initialize all 20 certificates from notebook
+     * All certificates: 3 years duration, Monthly interest payment
+     * All certificates are from HSBC
+     */
+    suspend fun initializeCertificatesFromNotebook() {
+        val certificates = listOf(
+            // 2024 Certificates
+        Certificate(
+            bankName = "HSBC",
+            certificateNumber = "235",
+            principalAmount = 300000.0,
+            durationYears = 3,
+            annualInterestRate = 22.0,
+            purchaseDate = getDateTimestamp(2024, 7, 17),
+            interestPaymentFrequency = InterestFrequency.MONTHLY,
+            status = CertificateStatus.ACTIVE,
+            notes = ""
+        ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 70000.0,
+                durationYears = 3,
+                annualInterestRate = 22.0,
+                purchaseDate = getDateTimestamp(2024, 7, 24),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = "236",
+                notes = ""
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 70000.0,
+                durationYears = 3,
+                annualInterestRate = 22.0,
+                purchaseDate = getDateTimestamp(2024, 8, 4),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 237"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 70000.0,
+                durationYears = 3,
+                annualInterestRate = 22.0,
+                purchaseDate = getDateTimestamp(2024, 8, 29),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 238"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 80000.0,
+                durationYears = 3,
+                annualInterestRate = 22.0,
+                purchaseDate = getDateTimestamp(2024, 9, 3),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 239"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 70000.0,
+                durationYears = 3,
+                annualInterestRate = 22.0,
+                purchaseDate = getDateTimestamp(2024, 9, 26),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 900"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 80000.0,
+                durationYears = 3,
+                annualInterestRate = 22.0,
+                purchaseDate = getDateTimestamp(2024, 10, 7),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 901"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 70000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2024, 10, 30),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 902"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 80000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2024, 11, 5),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 903"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 70000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2024, 12, 5),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 904"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 120000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2024, 12, 16),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 905"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 70000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2024, 12, 26),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 906"
+            ),
+            
+            // 2025 Certificates
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 100000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2025, 1, 8),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 907"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 70000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2025, 1, 27),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 908"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 100000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2025, 2, 5),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 909"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 60000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2025, 2, 27),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 910"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 450000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2025, 3, 9),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 911"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 120000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2025, 3, 27),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 912"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 210000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2025, 7, 6),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 913"
+            ),
+            Certificate(
+                bankName = "HSBC",
+                principalAmount = 80000.0,
+                durationYears = 3,
+                annualInterestRate = 20.5,
+                purchaseDate = getDateTimestamp(2025, 9, 15),
+                interestPaymentFrequency = InterestFrequency.MONTHLY,
+                status = CertificateStatus.ACTIVE,
+                certificateNumber = " 914"
+            )
+        )
+        
+        importCertificates(certificates)
+    }
+    
+    /**
+     * Helper function to create a date timestamp
+     */
+    private fun getDateTimestamp(year: Int, month: Int, day: Int): Long {
+        val calendar = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.YEAR, year)
+            set(java.util.Calendar.MONTH, month - 1) // Calendar months are 0-based
+            set(java.util.Calendar.DAY_OF_MONTH, day)
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        return calendar.timeInMillis
+    }
 }
 
 data class PortfolioUiState(
@@ -334,3 +667,12 @@ sealed class PriceState {
     object Success : PriceState()
     data class Error(val message: String) : PriceState()
 }
+
+/**
+ * Daily credit information for a specific day in the month
+ */
+data class DailyCredit(
+    val day: Int,
+    val totalAmount: Double,
+    val certificates: List<CertificateIncomeDetail>
+)

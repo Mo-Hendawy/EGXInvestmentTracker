@@ -373,11 +373,12 @@ fun DashboardScreen(
                     }
                 }
                 
-                items(holdings.take(5)) { holding ->
+                items(holdings) { holding ->
                     HoldingCard(
                         holding = holding,
                         onClick = { onNavigateToStockDetail(holding.id) },
-                        isBlurred = isAmountsBlurred
+                        isBlurred = isAmountsBlurred,
+                        totalPortfolioValue = summary?.totalValue ?: 0.0
                     )
                 }
                 

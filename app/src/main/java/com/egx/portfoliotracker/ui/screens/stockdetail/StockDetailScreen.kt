@@ -51,6 +51,7 @@ fun StockDetailScreen(
     var showBuyDialog by remember { mutableStateOf(false) }
     var showSellDialog by remember { mutableStateOf(false) }
     var showDividendDialog by remember { mutableStateOf(false) }
+    var showTargetDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
     
     // Calculate total dividends for this holding
@@ -65,6 +66,10 @@ fun StockDetailScreen(
         }
         return
     }
+    
+    val summary by viewModel.portfolioSummary.collectAsState()
+    val totalPortfolioValue = summary?.totalValue ?: 0.0
+    val currentPercentage = if (totalPortfolioValue > 0) (holding.marketValue / totalPortfolioValue) * 100 else 0.0
     
     // Get performance breakdown for this stock
     val stockPerformance = performanceBreakdown.find { it.stockSymbol == holding.stockSymbol }
@@ -138,6 +143,19 @@ fun StockDetailScreen(
                     notes = notes
                 )
                 showDividendDialog = false
+            }
+        )
+    }
+    
+    // Target percentage dialog
+    if (showTargetDialog) {
+        TargetPercentageDialog(
+            holding = holding,
+            currentPercentage = currentPercentage,
+            onDismiss = { showTargetDialog = false },
+            onConfirm = { targetPercent ->
+                viewModel.updateHoldingTargetPercentage(holding.id, targetPercent)
+                showTargetDialog = false
             }
         )
     }
@@ -475,6 +493,91 @@ fun StockDetailScreen(
                         DetailRow(label = "Average Cost", value = "EGP ${String.format("%.2f", holding.avgCost)}", isBlurred = isAmountsBlurred)
                         DetailRow(label = "Current Price", value = "EGP ${String.format("%.2f", holding.currentPrice)}", isBlurred = isAmountsBlurred)
                         DetailRow(label = "Total Cost", value = "EGP ${String.format("%,.0f", holding.totalCost)}", isBlurred = isAmountsBlurred)
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Divider()
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Portfolio allocation
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Portfolio Allocation",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                IconButton(
+                                    onClick = { showTargetDialog = true },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Edit,
+                                        contentDescription = "Set Target",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                            Text(
+                                text = if (isAmountsBlurred) "••%" else "${String.format("%.1f", currentPercentage)}%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        
+                        // Target percentage indicator
+                        if (holding.targetPercentage != null) {
+                            val difference = currentPercentage - holding.targetPercentage
+                            val isBelowTarget = difference < -0.5
+                            val isAboveTarget = difference > 0.5
+                            
+                            if (isBelowTarget || isAboveTarget) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                val targetColor = if (isBelowTarget) ProfitGreen else Color(0xFFFF9800) // Orange
+                                val targetIcon = if (isBelowTarget) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward
+                                val targetText = if (isBelowTarget) "Need to add" else "Need to reduce"
+                                
+                                Surface(
+                                    color = targetColor.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = targetIcon,
+                                                contentDescription = null,
+                                                tint = targetColor,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = targetText,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = targetColor
+                                            )
+                                        }
+                                        Text(
+                                            text = if (isAmountsBlurred) "Target: ••%" else "Target: ${String.format("%.1f", holding.targetPercentage)}%",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1227,6 +1330,75 @@ private fun TransactionDialog(
 @Composable
 private fun blurMoney(value: String, isBlurred: Boolean): String {
     return if (isBlurred && value.contains("EGP")) "••••••" else value
+}
+
+@Composable
+private fun TargetPercentageDialog(
+    holding: Holding,
+    currentPercentage: Double,
+    onDismiss: () -> Unit,
+    onConfirm: (Double?) -> Unit
+) {
+    var targetPercent by remember { mutableStateOf(holding.targetPercentage?.toString() ?: "") }
+    val targetNum = targetPercent.toDoubleOrNull()
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Target Percentage") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Current: ${String.format("%.1f", currentPercentage)}%",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                OutlinedTextField(
+                    value = targetPercent,
+                    onValueChange = { targetPercent = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Target Percentage (0-100)") },
+                    placeholder = { Text("e.g., 30.0") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        if (targetPercent.isNotEmpty()) {
+                            IconButton(onClick = { targetPercent = "" }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                            }
+                        }
+                    }
+                )
+                if (targetNum != null && targetNum in 0.0..100.0) {
+                    val difference = currentPercentage - targetNum
+                    val actionText = if (difference < -0.5) {
+                        "Need to add ${String.format("%.1f", -difference)}%"
+                    } else if (difference > 0.5) {
+                        "Need to reduce ${String.format("%.1f", difference)}%"
+                    } else {
+                        "At target"
+                    }
+                    Text(
+                        text = actionText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (difference < -0.5) ProfitGreen else if (difference > 0.5) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm(targetNum?.takeIf { it in 0.0..100.0 })
+                },
+                enabled = targetPercent.isEmpty() || (targetNum != null && targetNum in 0.0..100.0)
+            ) {
+                Text("Set")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable

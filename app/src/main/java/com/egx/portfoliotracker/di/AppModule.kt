@@ -1,8 +1,10 @@
 package com.egx.portfoliotracker.di
 
 import android.content.Context
+import com.egx.portfoliotracker.data.local.CertificateDao
 import com.egx.portfoliotracker.data.local.CostHistoryDao
 import com.egx.portfoliotracker.data.local.DividendDao
+import com.egx.portfoliotracker.data.local.ExpenseDao
 import com.egx.portfoliotracker.data.local.HoldingDao
 import com.egx.portfoliotracker.data.local.PortfolioDatabase
 import com.egx.portfoliotracker.data.local.StockDao
@@ -58,6 +60,18 @@ object AppModule {
     
     @Provides
     @Singleton
+    fun provideCertificateDao(database: PortfolioDatabase): CertificateDao {
+        return database.certificateDao()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideExpenseDao(database: PortfolioDatabase): ExpenseDao {
+        return database.expenseDao()
+    }
+    
+    @Provides
+    @Singleton
     fun provideStockPriceService(): StockPriceService {
         return StockPriceService()
     }
@@ -70,6 +84,8 @@ object AppModule {
         transactionDao: TransactionDao,
         costHistoryDao: CostHistoryDao,
         dividendDao: DividendDao,
+        certificateDao: CertificateDao,
+        expenseDao: ExpenseDao,
         stockPriceService: StockPriceService
     ): PortfolioRepository {
         return PortfolioRepository(
@@ -78,6 +94,8 @@ object AppModule {
             transactionDao, 
             costHistoryDao, 
             dividendDao,
+            certificateDao,
+            expenseDao,
             stockPriceService
         )
     }

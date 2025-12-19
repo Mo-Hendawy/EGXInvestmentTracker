@@ -21,6 +21,7 @@ data class Holding(
     val status: HoldingStatus = HoldingStatus.HOLD,
     val sector: String = "",
     val notes: String = "",
+    val targetPercentage: Double? = null,  // Target allocation percentage (0-100)
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
