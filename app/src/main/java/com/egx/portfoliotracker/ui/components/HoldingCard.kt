@@ -29,6 +29,8 @@ import java.util.Locale
 fun HoldingCard(
     holding: Holding,
     onClick: () -> Unit,
+    isBlurred: Boolean = false,
+    totalPortfolioValue: Double = 0.0,
     modifier: Modifier = Modifier,
     viewModel: PortfolioViewModel = hiltViewModel()
 ) {

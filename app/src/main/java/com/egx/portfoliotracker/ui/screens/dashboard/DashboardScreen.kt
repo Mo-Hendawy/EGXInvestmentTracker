@@ -33,6 +33,7 @@ fun DashboardScreen(
     val stockAllocation by viewModel.stockAllocation.collectAsState()
     val periodPerformances by viewModel.periodPerformances.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
+    val isAmountsBlurred by viewModel.isAmountsBlurred.collectAsState()
     
     val snackbarHostState = remember { SnackbarHostState() }
     
@@ -62,6 +63,17 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
+                    // Privacy/Blur toggle
+                    IconButton(
+                        onClick = { viewModel.toggleAmountsBlur() }
+                    ) {
+                        Icon(
+                            imageVector = if (isAmountsBlurred) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (isAmountsBlurred) "Show amounts" else "Hide amounts",
+                            tint = if (isAmountsBlurred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    // Refresh button
                     IconButton(
                         onClick = { viewModel.refreshAllPrices() },
                         enabled = !uiState.isRefreshing
@@ -181,7 +193,10 @@ fun DashboardScreen(
                     
                     // Portfolio Value Card
                     item {
-                        PortfolioValueCard(summary = portfolioSummary)
+                        PortfolioValueCard(
+                            summary = portfolioSummary,
+                            isBlurred = isAmountsBlurred
+                        )
                     }
                     
                     // Quick Stats
@@ -360,7 +375,9 @@ fun DashboardScreen(
                 items(holdings) { holding ->
                     HoldingCard(
                         holding = holding,
-                        onClick = { onNavigateToStockDetail(holding.id) }
+                        onClick = { onNavigateToStockDetail(holding.id) },
+                        isBlurred = isAmountsBlurred,
+                        totalPortfolioValue = summary?.totalValue ?: 0.0
                     )
                 }
                 

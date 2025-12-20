@@ -82,6 +82,7 @@ fun DonutChart(
 fun PortfolioDonutChart(
     stockAllocations: List<Pair<String, Double>>,
     totalValue: Double,
+    isBlurred: Boolean = false,
     modifier: Modifier = Modifier,
     strokeWidth: Dp = 28.dp,
     animationDuration: Int = 1000
@@ -137,17 +138,26 @@ fun PortfolioDonutChart(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = String.format("%,.2f", totalValue),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
+            if (isBlurred) {
+                Text(
+                    text = "••••••",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            } else {
+                Text(
+                    text = String.format("%,.2f", totalValue),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 Text(
                     text = "EGP",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
         }
     }
 }
