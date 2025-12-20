@@ -64,26 +64,54 @@ abstract class PortfolioDatabase : RoomDatabase() {
         // Migration from version 6 to 7 (add targetPercentage to holdings)
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                // Add targetPercentage column to holdings table
-                database.execSQL("ALTER TABLE holdings ADD COLUMN targetPercentage REAL")
+                // Check if targetPercentage column exists
+                val cursor = database.query("PRAGMA table_info(holdings)")
+                var columnExists = false
+                while (cursor.moveToNext()) {
+                    val columnName = cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                    if (columnName == "targetPercentage") {
+                        columnExists = true
+                        break
+                    }
+                }
+                cursor.close()
+                
+                // Add targetPercentage column only if it doesn't exist
+                if (!columnExists) {
+                    database.execSQL("ALTER TABLE holdings ADD COLUMN targetPercentage REAL")
+                }
             }
         }
         
         // Migration from version 5 to 6 (add certificateNumber field)
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                // Add certificateNumber column
-                database.execSQL("ALTER TABLE certificates ADD COLUMN certificateNumber TEXT NOT NULL DEFAULT ''")
+                // Check if certificateNumber column exists
+                val cursor = database.query("PRAGMA table_info(certificates)")
+                var columnExists = false
+                while (cursor.moveToNext()) {
+                    val columnName = cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                    if (columnName == "certificateNumber") {
+                        columnExists = true
+                        break
+                    }
+                }
+                cursor.close()
                 
-                // Migrate certificate numbers from notes to certificateNumber field
-                // Extract "ID: XXX" from notes and put in certificateNumber
-                database.execSQL("""
-                    UPDATE certificates 
-                    SET certificateNumber = CASE 
-                        WHEN notes LIKE 'ID: %' THEN SUBSTR(notes, 5)
-                        ELSE ''
-                    END
-                """)
+                // Add certificateNumber column only if it doesn't exist
+                if (!columnExists) {
+                    database.execSQL("ALTER TABLE certificates ADD COLUMN certificateNumber TEXT NOT NULL DEFAULT ''")
+                    
+                    // Migrate certificate numbers from notes to certificateNumber field
+                    // Extract "ID: XXX" from notes and put in certificateNumber
+                    database.execSQL("""
+                        UPDATE certificates 
+                        SET certificateNumber = CASE 
+                            WHEN notes LIKE 'ID: %' THEN SUBSTR(notes, 5)
+                            ELSE ''
+                        END
+                    """)
+                }
             }
         }
         
@@ -182,7 +210,6 @@ abstract class PortfolioDatabase : RoomDatabase() {
                     "portfolio_database"
                 )
                 .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
-                .fallbackToDestructiveMigration() // Only as last resort
                 .build()
                 INSTANCE = instance
                 instance

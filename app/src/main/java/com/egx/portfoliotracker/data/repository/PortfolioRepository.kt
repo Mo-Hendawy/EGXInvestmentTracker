@@ -398,8 +398,12 @@ class PortfolioRepository @Inject constructor(
     fun getAllSectors(): Flow<List<String>> = stockDao.getAllSectors()
     
     suspend fun initializeStocks() {
-        stockDao.insertStocks(EGXStocks.stocks)
-        // Sync stock names in existing holdings
+        // Force update all stocks - OnConflictStrategy.REPLACE will update existing rows by symbol
+        // This ensures database has correct names from current Stock.kt
+        for (stock in EGXStocks.stocks) {
+            stockDao.insertStock(stock)
+        }
+        // Sync stock names in existing holdings AFTER stocks are updated
         syncStockNames()
     }
     

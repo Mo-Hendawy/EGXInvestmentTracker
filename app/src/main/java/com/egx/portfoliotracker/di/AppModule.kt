@@ -9,6 +9,7 @@ import com.egx.portfoliotracker.data.local.HoldingDao
 import com.egx.portfoliotracker.data.local.PortfolioDatabase
 import com.egx.portfoliotracker.data.local.StockDao
 import com.egx.portfoliotracker.data.local.TransactionDao
+import com.egx.portfoliotracker.data.remote.StockAnalysisService
 import com.egx.portfoliotracker.data.remote.StockPriceService
 import com.egx.portfoliotracker.data.repository.PortfolioRepository
 import dagger.Module
@@ -74,6 +75,12 @@ object AppModule {
     @Singleton
     fun provideStockPriceService(): StockPriceService {
         return StockPriceService()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideStockAnalysisService(): StockAnalysisService {
+        return StockAnalysisService()
     }
     
     @Provides

@@ -18,27 +18,15 @@ import com.egx.portfoliotracker.ui.theme.*
 @Composable
 fun PortfolioValueCard(
     summary: PortfolioSummary,
-    isBlurred: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val profitColor = if (summary.totalProfitLoss >= 0) ProfitGreen else LossRed
-    // Use dynamic background color based on profit/loss for better visibility
-    val cardBackgroundColor = if (summary.totalProfitLoss >= 0) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.errorContainer
-    }
-    val cardTextColor = if (summary.totalProfitLoss >= 0) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.onErrorContainer
-    }
     
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = cardBackgroundColor
+            containerColor = MaterialTheme.colorScheme.primary
         )
     ) {
         Column(
@@ -49,18 +37,16 @@ fun PortfolioValueCard(
             Text(
                 text = "Total Portfolio Value",
                 style = MaterialTheme.typography.titleMedium,
-                color = cardTextColor.copy(alpha = 0.8f)
+                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
             )
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            BlurredAmountNoDecimals(
-                amount = summary.totalValue,
-                currency = "EGP",
-                isBlurred = isBlurred,
+            Text(
+                text = "EGP ${String.format("%,.0f", summary.totalValue)}",
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
-                color = cardTextColor
+                color = MaterialTheme.colorScheme.onPrimary
             )
             
             Spacer(modifier = Modifier.height(16.dp))
@@ -73,14 +59,12 @@ fun PortfolioValueCard(
                     Text(
                         text = "Total Cost",
                         style = MaterialTheme.typography.bodySmall,
-                        color = cardTextColor.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
                     )
-                    BlurredAmountNoDecimals(
-                        amount = summary.totalCost,
-                        currency = "EGP",
-                        isBlurred = isBlurred,
+                    Text(
+                        text = "EGP ${String.format("%,.0f", summary.totalCost)}",
                         style = MaterialTheme.typography.titleMedium,
-                        color = cardTextColor
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
                 
@@ -88,7 +72,7 @@ fun PortfolioValueCard(
                     Text(
                         text = "Profit/Loss",
                         style = MaterialTheme.typography.bodySmall,
-                        color = cardTextColor.copy(alpha = 0.7f)
+                        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -100,38 +84,13 @@ fun PortfolioValueCard(
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            BlurredAmountNoDecimals(
-                                amount = summary.totalProfitLoss,
-                                currency = if (summary.totalProfitLoss >= 0) "+EGP" else "EGP",
-                                isBlurred = isBlurred,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (summary.totalProfitLoss >= 0) 
-                                    ProfitGreenLight else LossRedLight
-                            )
-                            Text(
-                                text = " (",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = if (summary.totalProfitLoss >= 0) 
-                                    ProfitGreenLight else LossRedLight
-                            )
-                            BlurredPercentage(
-                                percentage = summary.totalProfitLossPercent,
-                                isBlurred = isBlurred,
-                                showSign = false,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (summary.totalProfitLoss >= 0) 
-                                    ProfitGreenLight else LossRedLight
-                            )
-                            Text(
-                                text = ")",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = if (summary.totalProfitLoss >= 0) 
-                                    ProfitGreenLight else LossRedLight
-                            )
-                        }
+                        Text(
+                            text = "${if (summary.totalProfitLoss >= 0) "+" else ""}${String.format("%,.0f", summary.totalProfitLoss)} (${String.format("%.2f", summary.totalProfitLossPercent)}%)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (summary.totalProfitLoss >= 0) 
+                                ProfitGreenLight else LossRedLight
+                        )
                     }
                 }
             }

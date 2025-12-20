@@ -3,17 +3,22 @@ package com.egx.portfoliotracker.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.egx.portfoliotracker.data.model.*
+import com.egx.portfoliotracker.data.remote.StockAnalysisService
 import com.egx.portfoliotracker.data.remote.StockPriceResult
+import com.egx.portfoliotracker.data.remote.StockPriceService
 import com.egx.portfoliotracker.data.repository.PortfolioRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
 class PortfolioViewModel @Inject constructor(
-    private val repository: PortfolioRepository
+    private val repository: PortfolioRepository,
+    private val stockAnalysisService: StockAnalysisService,
+    private val stockPriceService: StockPriceService
 ) : ViewModel() {
     
     // UI State
@@ -98,10 +103,77 @@ class PortfolioViewModel @Inject constructor(
             repository.initializeStocks()
             // Update any CIB certificates to HSBC
             repository.updateAllCertificatesBankName("Commercial International Bank (CIB)", "HSBC")
+            // Always sync stock names FIRST to fix any wrong names
+            repository.syncStockNames()
+            // Restore portfolio data
+            restorePortfolioData()
+            // Sync again after restore to ensure correct names
+            repository.syncStockNames()
         }
         
         refreshAllPrices()
         loadPerformanceData()
+    }
+    
+    /**
+     * Restore portfolio data from backup
+     */
+    private suspend fun restorePortfolioData() {
+        // Check if holdings already exist
+        val existingHoldings = repository.getAllHoldings().first()
+        if (existingHoldings.isNotEmpty()) {
+            return // Data already exists, don't restore
+        }
+        
+        // Wait for stocks to be initialized
+        repository.initializeStocks()
+        
+        // Get all stocks to match names
+        val stocks = repository.getAllStocks().first()
+        val stockMap = stocks.associateBy { it.symbol }
+        
+        // Portfolio data from backup
+        val portfolioData = listOf(
+            "ABUK" to Pair(1665, 47.28),
+            "AMOC" to Pair(5898, 6.87),
+            "BONY" to Pair(5592, 4.25),
+            "COMI" to Pair(1345, 101.62),
+            "EFID" to Pair(688, 18.26),
+            "EGAL" to Pair(735, 188.83),
+            "JUFO" to Pair(6313, 22.13),
+            "MFPC" to Pair(4431, 29.15),
+            "MICH" to Pair(10274, 33.15),
+            "POUL" to Pair(566, 24.78),
+            "SWDY" to Pair(1866, 77.49)
+        )
+        
+        // Create holdings
+        for ((symbol, data) in portfolioData) {
+            val shares = data.first
+            val avgCost = data.second
+            val stock = stockMap[symbol]
+            
+            if (stock != null) {
+                val holding = Holding(
+                    id = java.util.UUID.randomUUID().toString(),
+                    stockSymbol = symbol,
+                    stockNameEn = stock.nameEn,
+                    stockNameAr = stock.nameAr,
+                    shares = shares,
+                    avgCost = avgCost,
+                    currentPrice = avgCost, // Will be updated by price refresh
+                    sector = stock.sector,
+                    notes = "",
+                    targetPercentage = null,
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis()
+                )
+                repository.addHolding(holding)
+            }
+        }
+        
+        // Sync stock names after adding holdings to ensure correct names
+        repository.syncStockNames()
     }
     
     private fun loadPerformanceData() {
@@ -335,6 +407,43 @@ class PortfolioViewModel @Inject constructor(
     
     fun getHoldingsBySector(sector: String): Flow<List<Holding>> {
         return repository.getHoldingsBySector(sector)
+    }
+    
+    /**
+     * Get stock analysis (fair value and buy zones) for a holding
+     * Uses existing price data, no extra API calls
+     */
+    suspend fun getStockAnalysis(holding: Holding): com.egx.portfoliotracker.data.model.StockAnalysis? {
+        return try {
+            // Fetch current price data (we already have this cached)
+            val priceResult = stockPriceService.getPrice(holding.stockSymbol)
+            
+            if (priceResult is StockPriceResult.Success) {
+                stockAnalysisService.analyzeStock(
+                    symbol = holding.stockSymbol,
+                    currentPrice = priceResult.price,
+                    high = priceResult.high,
+                    low = priceResult.low,
+                    open = priceResult.open,
+                    previousClose = priceResult.previousClose,
+                    avgCost = holding.avgCost
+                )
+            } else {
+                // If price fetch fails, still try to analyze with available data
+                stockAnalysisService.analyzeStock(
+                    symbol = holding.stockSymbol,
+                    currentPrice = holding.currentPrice,
+                    high = null,
+                    low = null,
+                    open = null,
+                    previousClose = null,
+                    avgCost = holding.avgCost
+                )
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PortfolioViewModel", "Error analyzing stock ${holding.stockSymbol}", e)
+            null
+        }
     }
     
     // ============ CERTIFICATES ============

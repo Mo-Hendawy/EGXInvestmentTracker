@@ -23,6 +23,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.egx.portfoliotracker.data.model.*
+import com.egx.portfoliotracker.data.model.BuyZone
+import com.egx.portfoliotracker.data.model.Recommendation
+import com.egx.portfoliotracker.data.model.StockAnalysis
+import com.egx.portfoliotracker.data.model.ZoneStrength
 import com.egx.portfoliotracker.ui.components.RoleChip
 import com.egx.portfoliotracker.ui.components.StatusChip
 import com.egx.portfoliotracker.ui.theme.*
@@ -45,14 +49,25 @@ fun StockDetailScreen(
     val transactions by viewModel.getTransactionsByHolding(holdingId).collectAsState(initial = emptyList())
     val dividends by viewModel.getDividendsByHolding(holdingId).collectAsState(initial = emptyList())
     val performanceBreakdown by viewModel.performanceBreakdown.collectAsState()
-    val isAmountsBlurred by viewModel.isAmountsBlurred.collectAsState()
     
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showBuyDialog by remember { mutableStateOf(false) }
     var showSellDialog by remember { mutableStateOf(false) }
     var showDividendDialog by remember { mutableStateOf(false) }
-    var showTargetDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
+    
+    // Stock analysis
+    var stockAnalysis by remember { mutableStateOf<com.egx.portfoliotracker.data.model.StockAnalysis?>(null) }
+    var isLoadingAnalysis by remember { mutableStateOf(false) }
+    
+    // Load analysis when holding is available
+    LaunchedEffect(holding?.id) {
+        if (holding != null) {
+            isLoadingAnalysis = true
+            stockAnalysis = viewModel.getStockAnalysis(holding)
+            isLoadingAnalysis = false
+        }
+    }
     
     // Calculate total dividends for this holding
     val totalDividends = dividends.sumOf { it.totalAmount }
@@ -66,10 +81,6 @@ fun StockDetailScreen(
         }
         return
     }
-    
-    val summary by viewModel.portfolioSummary.collectAsState()
-    val totalPortfolioValue = summary?.totalValue ?: 0.0
-    val currentPercentage = if (totalPortfolioValue > 0) (holding.marketValue / totalPortfolioValue) * 100 else 0.0
     
     // Get performance breakdown for this stock
     val stockPerformance = performanceBreakdown.find { it.stockSymbol == holding.stockSymbol }
@@ -147,19 +158,6 @@ fun StockDetailScreen(
         )
     }
     
-    // Target percentage dialog
-    if (showTargetDialog) {
-        TargetPercentageDialog(
-            holding = holding,
-            currentPercentage = currentPercentage,
-            onDismiss = { showTargetDialog = false },
-            onConfirm = { targetPercent ->
-                viewModel.updateHoldingTargetPercentage(holding.id, targetPercent)
-                showTargetDialog = false
-            }
-        )
-    }
-    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -179,16 +177,6 @@ fun StockDetailScreen(
                     }
                 },
                 actions = {
-                    // Privacy/Blur toggle
-                    IconButton(
-                        onClick = { viewModel.toggleAmountsBlur() }
-                    ) {
-                        Icon(
-                            imageVector = if (isAmountsBlurred) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (isAmountsBlurred) "Show amounts" else "Hide amounts",
-                            tint = if (isAmountsBlurred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
                     IconButton(onClick = { showDeleteDialog = true }) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete", tint = LossRed)
                     }
@@ -223,21 +211,12 @@ fun StockDetailScreen(
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
                         )
-                        if (isAmountsBlurred) {
-                            Text(
-                                text = "••••••",
-                                style = MaterialTheme.typography.displaySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Text(
-                                text = "EGP ${String.format("%,.0f", holding.marketValue)}",
-                                style = MaterialTheme.typography.displaySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
+                        Text(
+                            text = "EGP ${String.format("%,.0f", holding.marketValue)}",
+                            style = MaterialTheme.typography.displaySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
                         
                         Spacer(modifier = Modifier.height(16.dp))
                         
@@ -251,28 +230,42 @@ fun StockDetailScreen(
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
-                            if (isAmountsBlurred) {
-                                Text(
-                                    text = "••••••",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (holding.isProfit) ProfitGreenLight else LossRedLight
-                                )
-                            } else {
-                                Text(
-                                    text = "${if (holding.isProfit) "+" else ""}EGP ${String.format("%,.0f", holding.profitLoss)}",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (holding.isProfit) ProfitGreenLight else LossRedLight
-                                )
-                                Text(
-                                    text = " (${String.format("%.2f", holding.profitLossPercent)}%)",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = if (holding.isProfit) ProfitGreenLight else LossRedLight
-                                )
-                            }
+                            Text(
+                                text = "${if (holding.isProfit) "+" else ""}EGP ${String.format("%,.0f", holding.profitLoss)}",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (holding.isProfit) ProfitGreenLight else LossRedLight
+                            )
+                            Text(
+                                text = " (${String.format("%.2f", holding.profitLossPercent)}%)",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = if (holding.isProfit) ProfitGreenLight else LossRedLight
+                            )
                         }
                     }
+                }
+            }
+            
+            // Stock Analysis Card (Fair Value & Buy Zones)
+            item {
+                if (isLoadingAnalysis) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        }
+                    }
+                } else if (stockAnalysis != null) {
+                    StockAnalysisCard(analysis = stockAnalysis!!)
                 }
             }
             
@@ -285,39 +278,29 @@ fun StockDetailScreen(
                     Button(
                         onClick = { showBuyDialog = true },
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                        colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen)
                     ) {
-                        Text(
-                            text = "Buy",
-                            style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1
-                        )
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Buy")
                     }
                     Button(
                         onClick = { showSellDialog = true },
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = LossRed),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                        colors = ButtonDefaults.buttonColors(containerColor = LossRed)
                     ) {
-                        Text(
-                            text = "Sell",
-                            style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1
-                        )
+                        Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Sell")
                     }
                     Button(
                         onClick = { showDividendDialog = true },
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = EgyptianGold),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
+                        colors = ButtonDefaults.buttonColors(containerColor = EgyptianGold)
                     ) {
-                        Text(
-                            text = "Dividend",
-                            style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1,
-                            softWrap = false
-                        )
+                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Dividend")
                     }
                 }
             }
@@ -391,19 +374,11 @@ fun StockDetailScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Price Change")
                             }
-                            if (isAmountsBlurred) {
-                                Text(
-                                    text = "••••••",
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (holding.isProfit) ProfitGreen else LossRed
-                                )
-                            } else {
-                                Text(
-                                    text = "${if (holding.isProfit) "+" else ""}EGP ${String.format("%,.0f", holding.profitLoss)} (${String.format("%.2f", holding.profitLossPercent)}%)",
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (holding.isProfit) ProfitGreen else LossRed
-                                )
-                            }
+                            Text(
+                                text = "${if (holding.isProfit) "+" else ""}EGP ${String.format("%,.0f", holding.profitLoss)} (${String.format("%.2f", holding.profitLossPercent)}%)",
+                                fontWeight = FontWeight.Bold,
+                                color = if (holding.isProfit) ProfitGreen else LossRed
+                            )
                         }
                         
                         Spacer(modifier = Modifier.height(8.dp))
@@ -423,19 +398,11 @@ fun StockDetailScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Dividends Received")
                             }
-                            if (isAmountsBlurred) {
-                                Text(
-                                    text = "••••••",
-                                    fontWeight = FontWeight.Bold,
-                                    color = EgyptianGold
-                                )
-                            } else {
-                                Text(
-                                    text = "+EGP ${String.format("%,.0f", totalDividends)} (${String.format("%.2f", dividendYield)}%)",
-                                    fontWeight = FontWeight.Bold,
-                                    color = EgyptianGold
-                                )
-                            }
+                            Text(
+                                text = "+EGP ${String.format("%,.0f", totalDividends)} (${String.format("%.2f", dividendYield)}%)",
+                                fontWeight = FontWeight.Bold,
+                                color = EgyptianGold
+                            )
                         }
                         
                         Spacer(modifier = Modifier.height(8.dp))
@@ -452,21 +419,12 @@ fun StockDetailScreen(
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
-                            if (isAmountsBlurred) {
-                                Text(
-                                    text = "••••••",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (totalReturn >= 0) ProfitGreen else LossRed
-                                )
-                            } else {
-                                Text(
-                                    text = "${if (totalReturn >= 0) "+" else ""}EGP ${String.format("%,.0f", totalReturn)} (${String.format("%.2f", totalReturnPercent)}%)",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (totalReturn >= 0) ProfitGreen else LossRed
-                                )
-                            }
+                            Text(
+                                text = "${if (totalReturn >= 0) "+" else ""}EGP ${String.format("%,.0f", totalReturn)} (${String.format("%.2f", totalReturnPercent)}%)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = if (totalReturn >= 0) ProfitGreen else LossRed
+                            )
                         }
                     }
                 }
@@ -489,95 +447,10 @@ fun StockDetailScreen(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
-                        DetailRow(label = "Shares", value = "${holding.shares}", isBlurred = false)
-                        DetailRow(label = "Average Cost", value = "EGP ${String.format("%.2f", holding.avgCost)}", isBlurred = isAmountsBlurred)
-                        DetailRow(label = "Current Price", value = "EGP ${String.format("%.2f", holding.currentPrice)}", isBlurred = isAmountsBlurred)
-                        DetailRow(label = "Total Cost", value = "EGP ${String.format("%,.0f", holding.totalCost)}", isBlurred = isAmountsBlurred)
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Divider()
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        // Portfolio allocation
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Portfolio Allocation",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                IconButton(
-                                    onClick = { showTargetDialog = true },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Edit,
-                                        contentDescription = "Set Target",
-                                        modifier = Modifier.size(16.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                            Text(
-                                text = if (isAmountsBlurred) "••%" else "${String.format("%.1f", currentPercentage)}%",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        
-                        // Target percentage indicator
-                        if (holding.targetPercentage != null) {
-                            val difference = currentPercentage - holding.targetPercentage
-                            val isBelowTarget = difference < -0.5
-                            val isAboveTarget = difference > 0.5
-                            
-                            if (isBelowTarget || isAboveTarget) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                val targetColor = if (isBelowTarget) ProfitGreen else Color(0xFFFF9800) // Orange
-                                val targetIcon = if (isBelowTarget) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward
-                                val targetText = if (isBelowTarget) "Need to add" else "Need to reduce"
-                                
-                                Surface(
-                                    color = targetColor.copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = targetIcon,
-                                                contentDescription = null,
-                                                tint = targetColor,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text(
-                                                text = targetText,
-                                                style = MaterialTheme.typography.labelMedium,
-                                                fontWeight = FontWeight.Bold,
-                                                color = targetColor
-                                            )
-                                        }
-                                        Text(
-                                            text = if (isAmountsBlurred) "Target: ••%" else "Target: ${String.format("%.1f", holding.targetPercentage)}%",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            fontWeight = FontWeight.Medium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        DetailRow(label = "Shares", value = "${holding.shares}")
+                        DetailRow(label = "Average Cost", value = "EGP ${String.format("%.2f", holding.avgCost)}")
+                        DetailRow(label = "Current Price", value = "EGP ${String.format("%.2f", holding.currentPrice)}")
+                        DetailRow(label = "Total Cost", value = "EGP ${String.format("%,.0f", holding.totalCost)}")
                     }
                 }
             }
@@ -624,14 +497,14 @@ fun StockDetailScreen(
                                     Column {
                                         Text("First Avg", style = MaterialTheme.typography.labelSmall)
                                         Text(
-                                            if (isAmountsBlurred) "••••••" else "EGP ${String.format("%.2f", firstCost)}",
+                                            "EGP ${String.format("%.2f", firstCost)}",
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text("Change", style = MaterialTheme.typography.labelSmall)
                                         Text(
-                                            if (isAmountsBlurred) "•••" else "${if (change >= 0) "+" else ""}${String.format("%.2f", changePercent)}%",
+                                            "${if (change >= 0) "+" else ""}${String.format("%.2f", changePercent)}%",
                                             fontWeight = FontWeight.Bold,
                                             color = if (change >= 0) LossRed else ProfitGreen
                                         )
@@ -639,7 +512,7 @@ fun StockDetailScreen(
                                     Column(horizontalAlignment = Alignment.End) {
                                         Text("Current Avg", style = MaterialTheme.typography.labelSmall)
                                         Text(
-                                            if (isAmountsBlurred) "••••••" else "EGP ${String.format("%.2f", lastCost)}",
+                                            "EGP ${String.format("%.2f", lastCost)}",
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -652,53 +525,26 @@ fun StockDetailScreen(
             
             // Tabs for History
             item {
-                ScrollableTabRow(
-                    selectedTabIndex = selectedTab,
-                    edgePadding = 0.dp,
-                    containerColor = MaterialTheme.colorScheme.surface
-                ) {
+                TabRow(selectedTabIndex = selectedTab) {
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { 
-                            Text(
-                                text = "Cost History",
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
+                        text = { Text("Cost Changes") }
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        text = { 
-                            Text(
-                                text = "Transactions",
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
+                        text = { Text("Transactions") }
                     )
                     Tab(
                         selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
                         text = { 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Text(
-                                    text = "Dividends",
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Dividends")
                                 if (dividends.isNotEmpty()) {
-                                    Badge { 
-                                        Text(
-                                            text = "${dividends.size}",
-                                            maxLines = 1
-                                        )
-                                    }
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Badge { Text("${dividends.size}") }
                                 }
                             }
                         }
@@ -719,7 +565,7 @@ fun StockDetailScreen(
                         }
                     } else {
                         items(costHistory.reversed()) { history ->
-                            CostHistoryItem(history = history, isBlurred = isAmountsBlurred)
+                            CostHistoryItem(history = history)
                         }
                     }
                 }
@@ -734,7 +580,7 @@ fun StockDetailScreen(
                         }
                     } else {
                         items(transactions) { transaction ->
-                            TransactionItem(transaction = transaction, isBlurred = isAmountsBlurred)
+                            TransactionItem(transaction = transaction)
                         }
                     }
                 }
@@ -781,7 +627,7 @@ fun StockDetailScreen(
                                 ) {
                                     Text("Total Dividends Received")
                                     Text(
-                                        if (isAmountsBlurred) "••••••" else "EGP ${String.format("%,.0f", totalDividends)}",
+                                        "EGP ${String.format("%,.0f", totalDividends)}",
                                         fontWeight = FontWeight.Bold,
                                         color = EgyptianGold
                                     )
@@ -791,7 +637,6 @@ fun StockDetailScreen(
                         items(dividends) { dividend ->
                             DividendItem(
                                 dividend = dividend,
-                                isBlurred = isAmountsBlurred,
                                 onDelete = { viewModel.deleteDividend(dividend) }
                             )
                         }
@@ -809,7 +654,6 @@ fun StockDetailScreen(
 @Composable
 private fun DividendItem(
     dividend: Dividend,
-    isBlurred: Boolean = false,
     onDelete: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()) }
@@ -871,17 +715,10 @@ private fun DividendItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 
-                if (isBlurred) {
-                    Text(
-                        text = "${dividend.totalShares} shares × •••",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else {
-                    Text(
-                        text = "${dividend.totalShares} shares × EGP ${String.format("%.2f", dividend.amountPerShare)}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+                Text(
+                    text = "${dividend.totalShares} shares × EGP ${String.format("%.2f", dividend.amountPerShare)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
                 
                 if (dividend.notes.isNotEmpty()) {
                     Text(
@@ -894,7 +731,7 @@ private fun DividendItem(
             
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = if (isBlurred) "+••••••" else "+EGP ${String.format("%,.0f", dividend.totalAmount)}",
+                    text = "+EGP ${String.format("%,.0f", dividend.totalAmount)}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = EgyptianGold
@@ -1063,7 +900,7 @@ private fun AverageCostGraph(
 }
 
 @Composable
-private fun CostHistoryItem(history: CostHistory, isBlurred: Boolean = false) {
+private fun CostHistoryItem(history: CostHistory) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()) }
     
     Card(
@@ -1114,7 +951,7 @@ private fun CostHistoryItem(history: CostHistory, isBlurred: Boolean = false) {
                 
                 if (history.transactionShares > 0) {
                     Text(
-                        text = if (isBlurred) "${history.transactionShares} shares @ •••" else "${history.transactionShares} shares @ EGP ${String.format("%.2f", history.transactionPrice)}",
+                        text = "${history.transactionShares} shares @ EGP ${String.format("%.2f", history.transactionPrice)}",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -1122,14 +959,14 @@ private fun CostHistoryItem(history: CostHistory, isBlurred: Boolean = false) {
             
             Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = if (isBlurred) "Avg: ••• → •••" else "Avg: ${String.format("%.2f", history.previousAvgCost)} → ${String.format("%.2f", history.newAvgCost)}",
+                    text = "Avg: ${String.format("%.2f", history.previousAvgCost)} → ${String.format("%.2f", history.newAvgCost)}",
                     style = MaterialTheme.typography.bodySmall
                 )
                 
                 val change = history.newAvgCost - history.previousAvgCost
                 if (history.previousAvgCost > 0) {
                     Text(
-                        text = if (isBlurred) "•••" else "${if (change >= 0) "↑" else "↓"} ${String.format("%.2f", kotlin.math.abs(change))}",
+                        text = "${if (change >= 0) "↑" else "↓"} ${String.format("%.2f", kotlin.math.abs(change))}",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = if (change >= 0) LossRed else ProfitGreen
@@ -1147,7 +984,7 @@ private fun CostHistoryItem(history: CostHistory, isBlurred: Boolean = false) {
 }
 
 @Composable
-private fun TransactionItem(transaction: Transaction, isBlurred: Boolean = false) {
+private fun TransactionItem(transaction: Transaction) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()) }
     
     Card(
@@ -1204,11 +1041,11 @@ private fun TransactionItem(transaction: Transaction, isBlurred: Boolean = false
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    text = if (isBlurred) "@ •••" else "@ EGP ${String.format("%.2f", transaction.price)}",
+                    text = "@ EGP ${String.format("%.2f", transaction.price)}",
                     style = MaterialTheme.typography.bodySmall
                 )
                 Text(
-                    text = if (isBlurred) "Total: •••" else "Total: EGP ${String.format("%,.0f", transaction.total)}",
+                    text = "Total: EGP ${String.format("%,.0f", transaction.total)}",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Medium
                 )
@@ -1328,84 +1165,9 @@ private fun TransactionDialog(
 }
 
 @Composable
-private fun blurMoney(value: String, isBlurred: Boolean): String {
-    return if (isBlurred && value.contains("EGP")) "••••••" else value
-}
-
-@Composable
-private fun TargetPercentageDialog(
-    holding: Holding,
-    currentPercentage: Double,
-    onDismiss: () -> Unit,
-    onConfirm: (Double?) -> Unit
-) {
-    var targetPercent by remember { mutableStateOf(holding.targetPercentage?.toString() ?: "") }
-    val targetNum = targetPercent.toDoubleOrNull()
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Set Target Percentage") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    text = "Current: ${String.format("%.1f", currentPercentage)}%",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                OutlinedTextField(
-                    value = targetPercent,
-                    onValueChange = { targetPercent = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Target Percentage (0-100)") },
-                    placeholder = { Text("e.g., 30.0") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth(),
-                    trailingIcon = {
-                        if (targetPercent.isNotEmpty()) {
-                            IconButton(onClick = { targetPercent = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
-                            }
-                        }
-                    }
-                )
-                if (targetNum != null && targetNum in 0.0..100.0) {
-                    val difference = currentPercentage - targetNum
-                    val actionText = if (difference < -0.5) {
-                        "Need to add ${String.format("%.1f", -difference)}%"
-                    } else if (difference > 0.5) {
-                        "Need to reduce ${String.format("%.1f", difference)}%"
-                    } else {
-                        "At target"
-                    }
-                    Text(
-                        text = actionText,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (difference < -0.5) ProfitGreen else if (difference > 0.5) Color(0xFFFF9800) else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    onConfirm(targetNum?.takeIf { it in 0.0..100.0 })
-                },
-                enabled = targetPercent.isEmpty() || (targetNum != null && targetNum in 0.0..100.0)
-            ) {
-                Text("Set")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
-@Composable
 private fun DetailRow(
     label: String,
-    value: String,
-    isBlurred: Boolean = false
+    value: String
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1417,9 +1179,195 @@ private fun DetailRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Text(
-            text = blurMoney(value, isBlurred),
+            text = value,
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium
         )
+    }
+}
+
+@Composable
+private fun StockAnalysisCard(analysis: StockAnalysis) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Stock Analysis",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                // Recommendation badge
+                RecommendationBadge(recommendation = analysis.recommendation)
+            }
+            
+            Divider()
+            
+            // Fair Value Section
+            if (analysis.fairValue != null) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "Fair Value",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "EGP ${String.format("%.2f", analysis.fairValue)}",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        val priceDiff = ((analysis.currentPrice - analysis.fairValue) / analysis.fairValue) * 100
+                        Surface(
+                            color = when {
+                                priceDiff < -10 -> ProfitGreen.copy(alpha = 0.2f)
+                                priceDiff > 10 -> LossRed.copy(alpha = 0.2f)
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            },
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "${if (priceDiff > 0) "+" else ""}${String.format("%.1f", priceDiff)}%",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = when {
+                                    priceDiff < -10 -> ProfitGreen
+                                    priceDiff > 10 -> LossRed
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    if (analysis.fairValueRange != null) {
+                        Text(
+                            text = "Range: EGP ${String.format("%.2f", analysis.fairValueRange.first)} - EGP ${String.format("%.2f", analysis.fairValueRange.second)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            
+            // Strong Buy Zones Section
+            if (analysis.strongBuyZones.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Strong Buy Zones",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    analysis.strongBuyZones.forEach { zone ->
+                        BuyZoneItem(
+                            zone = zone,
+                            currentPrice = analysis.currentPrice
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecommendationBadge(recommendation: Recommendation) {
+    val (color, text) = when (recommendation) {
+        Recommendation.STRONG_BUY -> Pair(ProfitGreen, "STRONG BUY")
+        Recommendation.BUY -> Pair(ProfitGreen.copy(alpha = 0.7f), "BUY")
+        Recommendation.HOLD -> Pair(MaterialTheme.colorScheme.onSurfaceVariant, "HOLD")
+        Recommendation.SELL -> Pair(LossRed.copy(alpha = 0.7f), "SELL")
+        Recommendation.STRONG_SELL -> Pair(LossRed, "STRONG SELL")
+    }
+    
+    Surface(
+        color = color.copy(alpha = 0.2f),
+        shape = RoundedCornerShape(6.dp)
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = color,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun BuyZoneItem(zone: BuyZone, currentPrice: Double) {
+    val priceDiff = ((currentPrice - zone.priceLevel) / currentPrice) * 100
+    val zoneColor = when (zone.strength) {
+        ZoneStrength.STRONG -> ProfitGreen
+        ZoneStrength.MODERATE -> Color(0xFFFF9800) // Orange
+        ZoneStrength.WEAK -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = zoneColor.copy(alpha = 0.1f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = when (zone.strength) {
+                            ZoneStrength.STRONG -> Icons.Default.Star
+                            ZoneStrength.MODERATE -> Icons.Default.StarBorder
+                            ZoneStrength.WEAK -> Icons.Default.Circle
+                        },
+                        contentDescription = null,
+                        tint = zoneColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "EGP ${String.format("%.2f", zone.priceLevel)}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = zoneColor
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = zone.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (priceDiff > 0) {
+                Text(
+                    text = "${String.format("%.1f", priceDiff)}% below",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = zoneColor,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
     }
 }

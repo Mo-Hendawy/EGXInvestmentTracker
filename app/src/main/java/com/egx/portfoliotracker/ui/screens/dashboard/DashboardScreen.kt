@@ -33,7 +33,6 @@ fun DashboardScreen(
     val stockAllocation by viewModel.stockAllocation.collectAsState()
     val periodPerformances by viewModel.periodPerformances.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
-    val isAmountsBlurred by viewModel.isAmountsBlurred.collectAsState()
     
     val snackbarHostState = remember { SnackbarHostState() }
     
@@ -63,17 +62,6 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
-                    // Privacy/Blur toggle
-                    IconButton(
-                        onClick = { viewModel.toggleAmountsBlur() }
-                    ) {
-                        Icon(
-                            imageVector = if (isAmountsBlurred) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (isAmountsBlurred) "Show amounts" else "Hide amounts",
-                            tint = if (isAmountsBlurred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                    // Refresh button
                     IconButton(
                         onClick = { viewModel.refreshAllPrices() },
                         enabled = !uiState.isRefreshing
@@ -168,36 +156,32 @@ fun DashboardScreen(
                                 
                                 Spacer(modifier = Modifier.height(16.dp))
                                 
-                                // Donut chart centered
-                                Box(
+                                // Donut chart with total in center - ABOVE the legend
+                                Column(
                                     modifier = Modifier.fillMaxWidth(),
-                                    contentAlignment = Alignment.Center
+                                    horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     PortfolioDonutChart(
                                         stockAllocations = stockAllocation,
                                         totalValue = portfolioSummary.totalValue,
-                                        isBlurred = isAmountsBlurred,
-                                        modifier = Modifier.size(280.dp)
+                                        modifier = Modifier.size(200.dp)
+                                    )
+                                    
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    
+                                    // Legend below the chart
+                                    StockAllocationLegend(
+                                        allocations = stockAllocation.take(10),
+                                        modifier = Modifier.fillMaxWidth()
                                     )
                                 }
-                                
-                                Spacer(modifier = Modifier.height(16.dp))
-                                
-                                // Legend below chart
-                                StockAllocationLegend(
-                                    allocations = stockAllocation.take(10),
-                                    modifier = Modifier.fillMaxWidth()
-                                )
                             }
                         }
                     }
                     
                     // Portfolio Value Card
                     item {
-                        PortfolioValueCard(
-                            summary = portfolioSummary,
-                            isBlurred = isAmountsBlurred
-                        )
+                        PortfolioValueCard(summary = portfolioSummary)
                     }
                     
                     // Quick Stats
@@ -376,9 +360,7 @@ fun DashboardScreen(
                 items(holdings) { holding ->
                     HoldingCard(
                         holding = holding,
-                        onClick = { onNavigateToStockDetail(holding.id) },
-                        isBlurred = isAmountsBlurred,
-                        totalPortfolioValue = summary?.totalValue ?: 0.0
+                        onClick = { onNavigateToStockDetail(holding.id) }
                     )
                 }
                 

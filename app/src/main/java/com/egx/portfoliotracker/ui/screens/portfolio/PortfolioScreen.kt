@@ -39,7 +39,6 @@ fun PortfolioScreen(
 ) {
     val holdings by viewModel.holdings.collectAsState()
     val summary by viewModel.portfolioSummary.collectAsState()
-    val isAmountsBlurred by viewModel.isAmountsBlurred.collectAsState()
     
     var selectedRole by remember { mutableStateOf<HoldingRole?>(null) }
     var selectedStatus by remember { mutableStateOf<HoldingStatus?>(null) }
@@ -85,16 +84,6 @@ fun PortfolioScreen(
                     }
                 },
                 actions = {
-                    // Privacy/Blur toggle
-                    IconButton(
-                        onClick = { viewModel.toggleAmountsBlur() }
-                    ) {
-                        Icon(
-                            imageVector = if (isAmountsBlurred) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (isAmountsBlurred) "Show amounts" else "Hide amounts",
-                            tint = if (isAmountsBlurred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
                     IconButton(onClick = { showFilters = !showFilters }) {
                         Icon(
                             Icons.Default.FilterList,
@@ -340,9 +329,7 @@ fun PortfolioScreen(
                     items(filteredHoldings, key = { it.id }) { holding ->
                         HoldingCard(
                             holding = holding,
-                            onClick = { onNavigateToStockDetail(holding.id) },
-                            isBlurred = isAmountsBlurred,
-                            totalPortfolioValue = summary?.totalValue ?: 0.0
+                            onClick = { onNavigateToStockDetail(holding.id) }
                         )
                     }
                 }

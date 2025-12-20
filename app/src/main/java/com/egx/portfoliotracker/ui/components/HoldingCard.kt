@@ -15,10 +15,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import kotlin.math.abs
 import com.egx.portfoliotracker.data.model.Holding
 import com.egx.portfoliotracker.data.model.HoldingRole
 import com.egx.portfoliotracker.data.model.HoldingStatus
 import com.egx.portfoliotracker.ui.theme.*
+import com.egx.portfoliotracker.viewmodel.PortfolioViewModel
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -26,10 +29,15 @@ import java.util.Locale
 fun HoldingCard(
     holding: Holding,
     onClick: () -> Unit,
-    isBlurred: Boolean = false,
-    totalPortfolioValue: Double = 0.0,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: PortfolioViewModel = hiltViewModel()
 ) {
+    // Fetch stock analysis for fair value
+    var stockAnalysis by remember { mutableStateOf<com.egx.portfoliotracker.data.model.StockAnalysis?>(null) }
+    
+    LaunchedEffect(holding.id) {
+        stockAnalysis = viewModel.getStockAnalysis(holding)
+    }
     val profitColor by animateColorAsState(
         targetValue = if (holding.isProfit) ProfitGreen else LossRed,
         label = "profit_color"
@@ -85,21 +93,12 @@ fun HoldingCard(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        if (isBlurred) {
-                            Text(
-                                text = "•••",
-                                color = profitColor,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        } else {
-                            Text(
-                                text = "${if (holding.isProfit) "+" else ""}${String.format("%.2f", holding.profitLossPercent)}%",
-                                color = profitColor,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
+                        Text(
+                            text = "${if (holding.isProfit) "+" else ""}${String.format("%.2f", holding.profitLossPercent)}%",
+                            color = profitColor,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
             }
@@ -118,17 +117,17 @@ fun HoldingCard(
                 )
                 StatItem(
                     label = "Avg Cost",
-                    value = if (isBlurred) "•••" else String.format("%.2f", holding.avgCost),
+                    value = String.format("%.2f", holding.avgCost),
                     modifier = Modifier.weight(1f)
                 )
                 StatItem(
                     label = "Current",
-                    value = if (isBlurred) "•••" else String.format("%.2f", holding.currentPrice),
+                    value = String.format("%.2f", holding.currentPrice),
                     modifier = Modifier.weight(1f)
                 )
                 StatItem(
                     label = "Value",
-                    value = if (isBlurred) "•••" else String.format("%.0f", holding.marketValue),
+                    value = String.format("%.0f", holding.marketValue),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -148,53 +147,21 @@ fun HoldingCard(
                 }
             }
             
-            // Target percentage indicator
-            if (holding.targetPercentage != null && totalPortfolioValue > 0) {
+            // Fair Value Indicator (using actual stock analysis)
+            if (stockAnalysis?.fairValue != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                val currentPercentage = (holding.marketValue / totalPortfolioValue) * 100
-                val difference = currentPercentage - holding.targetPercentage
-                val isBelowTarget = difference < -0.5 // 0.5% threshold to avoid flickering
-                val isAboveTarget = difference > 0.5
-                
-                if (isBelowTarget || isAboveTarget) {
-                    val targetColor = if (isBelowTarget) ProfitGreen else Color(0xFFFF9800) // Orange
-                    val targetIcon = if (isBelowTarget) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward
-                    
-                    Surface(
-                        color = targetColor.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = targetIcon,
-                                    contentDescription = null,
-                                    tint = targetColor,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = if (isBlurred) "Target: ••%" else "Target: ${String.format("%.1f", holding.targetPercentage)}%",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = targetColor
-                                )
-                            }
-                            Text(
-                                text = if (isBlurred) "••%" else "${String.format("%.1f", currentPercentage)}%",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
+                FairValueIndicator(
+                    currentPrice = holding.currentPrice,
+                    fairValue = stockAnalysis!!.fairValue!!,
+                    recommendation = stockAnalysis!!.recommendation
+                )
+            } else if (holding.avgCost > 0) {
+                // Fallback to simple calculation if analysis not available
+                Spacer(modifier = Modifier.height(8.dp))
+                FairValueIndicator(
+                    currentPrice = holding.currentPrice,
+                    avgCost = holding.avgCost
+                )
             }
             
             // Notes if present
@@ -299,3 +266,87 @@ fun SectorChip(sector: String, modifier: Modifier = Modifier) {
         )
     }
 }
+
+@Composable
+private fun FairValueIndicator(
+    currentPrice: Double,
+    fairValue: Double? = null,
+    avgCost: Double? = null,
+    recommendation: com.egx.portfoliotracker.data.model.Recommendation? = null
+) {
+    val (recommendationText, color, icon, fairValuePercent) = if (fairValue != null && recommendation != null) {
+        // Use actual fair value from analysis
+        val priceDiff = ((currentPrice - fairValue) / fairValue) * 100
+        val (text, col, ico) = when (recommendation) {
+            com.egx.portfoliotracker.data.model.Recommendation.STRONG_BUY -> Triple("STRONG BUY", ProfitGreen, Icons.Default.Star)
+            com.egx.portfoliotracker.data.model.Recommendation.BUY -> Triple("BUY", ProfitGreen.copy(alpha = 0.7f), Icons.Default.StarBorder)
+            com.egx.portfoliotracker.data.model.Recommendation.SELL -> Triple("SELL", LossRed.copy(alpha = 0.7f), Icons.Default.Info)
+            com.egx.portfoliotracker.data.model.Recommendation.STRONG_SELL -> Triple("STRONG SELL", LossRed, Icons.Default.Warning)
+            else -> Triple("FAIR VALUE", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Default.CheckCircle)
+        }
+        Quadruple(text, col, ico, priceDiff)
+    } else if (avgCost != null) {
+        // Fallback: simple calculation based on avg cost
+        val priceToCostRatio = currentPrice / avgCost
+        val (text, col, ico) = when {
+            priceToCostRatio < 0.85 -> Triple("STRONG BUY", ProfitGreen, Icons.Default.Star)
+            priceToCostRatio < 0.95 -> Triple("BUY", ProfitGreen.copy(alpha = 0.7f), Icons.Default.StarBorder)
+            priceToCostRatio > 1.15 -> Triple("OVERVALUED", LossRed, Icons.Default.Warning)
+            priceToCostRatio > 1.05 -> Triple("EXPENSIVE", LossRed.copy(alpha = 0.7f), Icons.Default.Info)
+            else -> Triple("FAIR VALUE", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Default.CheckCircle)
+        }
+        Quadruple(text, col, ico, (priceToCostRatio - 1.0) * 100)
+    } else {
+        Quadruple("N/A", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Default.Info, 0.0)
+    }
+    
+    Surface(
+        color = color.copy(alpha = 0.15f),
+        shape = RoundedCornerShape(6.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    text = recommendationText,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = color
+                )
+                if (abs(fairValuePercent) > 0.1) {
+                    Text(
+                        text = "${if (fairValuePercent < 0) "" else "+"}${String.format("%.1f", fairValuePercent)}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = color.copy(alpha = 0.8f)
+                    )
+                }
+            }
+            if (fairValue != null) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Fair Value: EGP ${String.format("%.2f", fairValue)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+            }
+        }
+    }
+}
+
+// Helper data class for quadruple
+private data class Quadruple<A, B, C, D>(
+    val first: A,
+    val second: B,
+    val third: C,
+    val fourth: D
+)

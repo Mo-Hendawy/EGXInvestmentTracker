@@ -82,7 +82,6 @@ fun DonutChart(
 fun PortfolioDonutChart(
     stockAllocations: List<Pair<String, Double>>,
     totalValue: Double,
-    isBlurred: Boolean = false,
     modifier: Modifier = Modifier,
     strokeWidth: Dp = 28.dp,
     animationDuration: Int = 1000
@@ -138,26 +137,17 @@ fun PortfolioDonutChart(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (isBlurred) {
-                Text(
-                    text = "••••••",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            } else {
-                Text(
-                    text = String.format("%,.2f", totalValue),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
             Text(
-                text = "EGP",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = String.format("%,.2f", totalValue),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
+                Text(
+                    text = "EGP",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
         }
     }
 }
@@ -184,25 +174,28 @@ fun StockAllocationLegend(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(16.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(color)
-                    )
                     Text(
                         text = symbol,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium
                     )
+                    Text(
+                        text = "–",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = String.format("%.2f%%", percentage),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Text(
-                    text = String.format("%.2f%%", percentage),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(color)
                 )
             }
         }
