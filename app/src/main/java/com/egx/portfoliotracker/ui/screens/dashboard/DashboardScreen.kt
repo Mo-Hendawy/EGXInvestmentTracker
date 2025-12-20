@@ -176,6 +176,7 @@ fun DashboardScreen(
                                     PortfolioDonutChart(
                                         stockAllocations = stockAllocation,
                                         totalValue = portfolioSummary.totalValue,
+                                        isBlurred = isAmountsBlurred,
                                         modifier = Modifier.size(200.dp)
                                     )
                                     

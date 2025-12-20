@@ -42,6 +42,7 @@ import java.util.*
 fun StockDetailScreen(
     holdingId: String,
     onNavigateBack: () -> Unit,
+    onNavigateToEdit: (String) -> Unit = {},
     viewModel: PortfolioViewModel = hiltViewModel()
 ) {
     val holdings by viewModel.holdings.collectAsState()
@@ -57,6 +58,7 @@ fun StockDetailScreen(
     var showBuyDialog by remember { mutableStateOf(false) }
     var showSellDialog by remember { mutableStateOf(false) }
     var showDividendDialog by remember { mutableStateOf(false) }
+    var showTargetDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
     
     // Stock analysis
@@ -161,6 +163,18 @@ fun StockDetailScreen(
         )
     }
     
+    // Target Percentage dialog
+    if (showTargetDialog) {
+        TargetPercentageDialog(
+            currentTarget = holding.targetPercentage,
+            onDismiss = { showTargetDialog = false },
+            onConfirm = { targetPercentage ->
+                viewModel.updateHoldingTargetPercentage(holding.id, targetPercentage)
+                showTargetDialog = false
+            }
+        )
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -180,6 +194,11 @@ fun StockDetailScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { 
+                        onNavigateToEdit(holdingId)
+                    }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit")
+                    }
                     IconButton(onClick = { showDeleteDialog = true }) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete", tint = LossRed)
                     }
@@ -448,15 +467,39 @@ fun StockDetailScreen(
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = "Position Details",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Position Details",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (holding.targetPercentage != null) {
+                                TextButton(onClick = { showTargetDialog = true }) {
+                                    Text("Edit Target")
+                                }
+                            } else {
+                                TextButton(onClick = { showTargetDialog = true }) {
+                                    Text("Set Target")
+                                }
+                            }
+                        }
                         DetailRow(label = "Shares", value = "${holding.shares}")
                         DetailRow(label = "Average Cost", value = "EGP ${String.format("%.2f", holding.avgCost)}")
                         DetailRow(label = "Current Price", value = "EGP ${String.format("%.2f", holding.currentPrice)}")
                         DetailRow(label = "Total Cost", value = "EGP ${String.format("%,.0f", holding.totalCost)}")
+                        if (holding.targetPercentage != null) {
+                            val portfolioSummary by viewModel.portfolioSummary.collectAsState()
+                            val totalValue = portfolioSummary?.totalValue ?: 0.0
+                            val currentPercentage = if (totalValue > 0) (holding.marketValue / totalValue) * 100 else 0.0
+                            DetailRow(
+                                label = "Target %", 
+                                value = "${String.format("%.1f", holding.targetPercentage)}% (Current: ${String.format("%.1f", currentPercentage)}%)"
+                            )
+                        }
                     }
                 }
             }
@@ -824,6 +867,102 @@ private fun DividendDialog(
                 colors = ButtonDefaults.buttonColors(containerColor = EgyptianGold)
             ) {
                 Text("Add Dividend")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TargetPercentageDialog(
+    currentTarget: Double?,
+    onDismiss: () -> Unit,
+    onConfirm: (Double?) -> Unit
+) {
+    var targetPercentage by remember { mutableStateOf(currentTarget?.toString() ?: "") }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set Target Percentage") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Set the target allocation percentage for this stock in your portfolio (0-100%)",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                
+                OutlinedTextField(
+                    value = targetPercentage,
+                    onValueChange = { newValue ->
+                        val filtered = if (newValue.isEmpty()) {
+                            ""
+                        } else {
+                            val parts = newValue.split('.')
+                            when {
+                                parts.size == 1 -> parts[0].filter { it.isDigit() }
+                                parts.size == 2 -> {
+                                    val beforeDecimal = parts[0].filter { it.isDigit() }
+                                    val afterDecimal = parts[1].filter { it.isDigit() }.take(2) // Max 2 decimal places
+                                    if (beforeDecimal.isEmpty() && afterDecimal.isEmpty()) {
+                                        ""
+                                    } else {
+                                        "$beforeDecimal.$afterDecimal"
+                                    }
+                                }
+                                else -> targetPercentage
+                            }
+                        }
+                        targetPercentage = filtered
+                    },
+                    label = { Text("Target Percentage (%)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = { Icon(Icons.Default.TrackChanges, contentDescription = null) },
+                    supportingText = { 
+                        if (targetPercentage.isNotEmpty()) {
+                            val value = targetPercentage.toDoubleOrNull()
+                            if (value != null && (value < 0 || value > 100)) {
+                                Text("Must be between 0 and 100", color = LossRed)
+                            }
+                        }
+                    }
+                )
+                
+                if (currentTarget != null) {
+                    Divider()
+                    Text(
+                        "Current Target: ${String.format("%.1f", currentTarget)}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextButton(onClick = { 
+                        onConfirm(null) // Remove target
+                        onDismiss()
+                    }) {
+                        Text("Remove Target", color = LossRed)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val value = targetPercentage.toDoubleOrNull()
+                    if (value != null && value >= 0 && value <= 100) {
+                        onConfirm(value)
+                    }
+                },
+                enabled = targetPercentage.isNotEmpty() && 
+                    targetPercentage.toDoubleOrNull() != null &&
+                    targetPercentage.toDoubleOrNull()!! >= 0 &&
+                    targetPercentage.toDoubleOrNull()!! <= 100
+            ) {
+                Text(if (currentTarget != null) "Update" else "Set Target")
             }
         },
         dismissButton = {

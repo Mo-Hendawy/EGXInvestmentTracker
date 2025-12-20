@@ -23,6 +23,7 @@ import com.egx.portfoliotracker.ui.screens.expenses.CategoryManagementScreen
 import com.egx.portfoliotracker.ui.screens.expenses.ExpensesScreen
 import com.egx.portfoliotracker.ui.screens.portfolio.PortfolioScreen
 import com.egx.portfoliotracker.ui.screens.stockdetail.StockDetailScreen
+import com.egx.portfoliotracker.ui.screens.editholding.EditHoldingScreen
 
 sealed class Screen(val route: String) {
     object Dashboard : Screen("dashboard")
@@ -42,6 +43,9 @@ sealed class Screen(val route: String) {
     }
     object StockDetail : Screen("stock_detail/{holdingId}") {
         fun createRoute(holdingId: String) = "stock_detail/$holdingId"
+    }
+    object EditHolding : Screen("edit_holding/{holdingId}") {
+        fun createRoute(holdingId: String) = "edit_holding/$holdingId"
     }
     object CertificateDetail : Screen("certificate_detail/{certificateId}") {
         fun createRoute(certificateId: String) = "certificate_detail/$certificateId"
@@ -173,6 +177,24 @@ fun AppNavigation(
         ) { backStackEntry ->
             val holdingId = backStackEntry.arguments?.getString("holdingId") ?: return@composable
             StockDetailScreen(
+                holdingId = holdingId,
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToEdit = { editHoldingId ->
+                    navController.navigate(Screen.EditHolding.createRoute(editHoldingId))
+                }
+            )
+        }
+        
+        composable(
+            route = Screen.EditHolding.route,
+            arguments = listOf(
+                navArgument("holdingId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val holdingId = backStackEntry.arguments?.getString("holdingId") ?: return@composable
+            EditHoldingScreen(
                 holdingId = holdingId,
                 onNavigateBack = {
                     navController.popBackStack()

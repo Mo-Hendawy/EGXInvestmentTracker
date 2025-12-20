@@ -46,7 +46,7 @@ object EGXStocks {
         Stock("JUFO", "Juhayna Food Industries", "جهينة للصناعات الغذائية", "Food & Beverage"),
         Stock("EAST", "Eastern Company", "الشرقية للدخان", "Food & Beverage"),
         Stock("ISMA", "Ismailia Misr Poultry", "الإسماعيلية مصر للدواجن", "Food & Beverage"),
-        Stock("CANA", "Canal Shipping Agencies", "قناة السويس للتوكيلات الملاحية", "Food & Beverage"),
+        Stock("CSAG", "Canal Shipping Agencies", "قناة السويس للتوكيلات الملاحية", "Transportation"),
         Stock("MNPH", "Misr National Pharmaceutical", "القومية لإنتاج الأدوية", "Food & Beverage"),
         Stock("DOMTY", "Arabian Food Industries (Domty)", "العربية للصناعات الغذائية (دومتي)", "Food & Beverage"),
         Stock("POUL", "Cairo Poultry", "القاهرة للدواجن", "Food & Beverage"),
@@ -68,11 +68,10 @@ object EGXStocks {
         Stock("AMOC", "Alexandria Mineral Oils", "اسكندرية للزيوت المعدنية", "Oil & Gas"),
         Stock("MOPCO", "Misr Fertilizers Production", "موبكو", "Oil & Gas"),
         Stock("SKPC", "Sidi Kerir Petrochemicals", "سيدي كرير للبتروكيماويات", "Oil & Gas"),
-        Stock("ACGC", "Alex Containers & Goods", "اسكندرية للحاويات والبضائع", "Oil & Gas"),
         
         // Financial Services
-        Stock("EFID", "EFG Hermes Holding", "هيرميس القابضة", "Financial Services"),
-        Stock("HRHO", "GB Auto", "جي بي أوتو", "Financial Services"),
+        Stock("EFID", "Edita Food Industries", "إديتا للصناعات الغذائية", "Food & Beverage"),
+        Stock("HRHO", "EFG Holding Company", "إي أف جي القابضة", "Financial Services"),
         Stock("CIHE", "CI Capital Holding", "سي آي كابيتال", "Financial Services"),
         Stock("EKHOA", "Egyptian Kuwait Holding", "المصرية الكويتية للاستثمار", "Financial Services"),
         Stock("EXPA", "Beltone Financial", "بلتون القابضة", "Financial Services"),
@@ -94,7 +93,7 @@ object EGXStocks {
         
         // Industrial
         Stock("EGAL", "Egypt Aluminum", "مصر للألومنيوم", "Industrial"),
-        Stock("AUTO", "GB Automotive", "جي بي للسيارات", "Industrial"),
+        Stock("AUTO", "GB Corp", "جي بي كورب", "Industrial"),
         Stock("ELKA", "El Kabel", "مصنع الكابلات الكهربائية", "Industrial"),
         Stock("ECAP", "Egypt Caps", "ايجيكاب للأغطية", "Industrial"),
         Stock("UEGC", "Upper Egypt Contracting", "المقاولون العرب", "Industrial"),
@@ -106,9 +105,7 @@ object EGXStocks {
         Stock("ELGD", "El Nasr Clothes & Textiles (Kabo)", "النصر للملابس والمنسوجات", "Textiles"),
         
         // Tourism & Hotels
-        Stock("OCDI", "Orascom Development Egypt", "أوراسكوم للتنمية مصر", "Tourism"),
-        Stock("EKHO", "Egyptian Kuwait Holding", "المصرية الكويتية القابضة", "Tourism"),
-        Stock("MTIE", "Misr Tourism", "مصر للسياحة", "Tourism"),
+        Stock("MTIE", "Misr Tourism Investment", "مصر للاستثمارات السياحية", "Tourism"),
         
         // Transportation & Logistics
         Stock("ALCN", "Alexandria Containers", "اسكندرية للحاويات", "Transportation"),
@@ -120,7 +117,7 @@ object EGXStocks {
         Stock("BONY", "Bonyan for Development and Trade", "بنيان للتطوير والتجارة", "Real Estate"),
         Stock("MICH", "Misr Chemical Industries", "مصر لصناعة الكيماويات", "Diversified"),
         Stock("OREG", "Oriental Weavers", "السجاد الشرقي", "Diversified"),
-        Stock("EKHO", "Egyptian Kuwait Holding", "المصرية الكويتية", "Diversified"),
+        Stock("EKHO", "Egypt Kuwait Holding Company", "المصرية الكويتية القابضة", "Diversified"),
         Stock("SPMD", "Speed Medical", "سبيد ميديكال", "Healthcare"),
         Stock("ASCM", "Arabian Cement", "أسمنت العربية", "Building Materials"),
         Stock("KIMA", "Abu Qir Fertilizers (KIMA)", "كيما للأسمدة", "Industrial"),
@@ -132,7 +129,6 @@ object EGXStocks {
         Stock("MODI", "Modern Dairy", "الألبان الحديثة", "Food & Beverage"),
         Stock("MPRC", "Middle East Packaging", "الشرق الأوسط للتعبئة", "Industrial"),
         Stock("RTVC", "El Nasr Transformers", "النصر للمحولات", "Industrial"),
-        Stock("MTIE", "Misr Tourism Investment", "مصر للاستثمارات السياحية", "Tourism"),
         Stock("MNCC", "Misr National Cement", "الوطنية للأسمنت", "Building Materials")
     )
     

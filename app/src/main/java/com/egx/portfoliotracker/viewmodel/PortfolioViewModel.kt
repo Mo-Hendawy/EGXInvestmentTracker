@@ -325,6 +325,7 @@ class PortfolioViewModel @Inject constructor(
     fun updateHolding(holding: Holding) {
         viewModelScope.launch {
             repository.updateHolding(holding)
+            _uiState.update { it.copy(showAddSuccess = true) }
         }
     }
     
