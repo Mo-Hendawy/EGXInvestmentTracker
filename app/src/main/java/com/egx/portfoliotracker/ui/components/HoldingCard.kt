@@ -96,7 +96,7 @@ fun HoldingCard(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "${if (holding.isProfit) "+" else ""}${String.format("%.2f", holding.profitLossPercent)}%",
+                            text = if (isBlurred) "••%" else "${if (holding.isProfit) "+" else ""}${String.format("%.2f", holding.profitLossPercent)}%",
                             color = profitColor,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.bodyMedium
@@ -119,17 +119,17 @@ fun HoldingCard(
                 )
                 StatItem(
                     label = "Avg Cost",
-                    value = String.format("%.2f", holding.avgCost),
+                    value = if (isBlurred) "•••" else String.format("%.2f", holding.avgCost),
                     modifier = Modifier.weight(1f)
                 )
                 StatItem(
                     label = "Current",
-                    value = String.format("%.2f", holding.currentPrice),
+                    value = if (isBlurred) "•••" else String.format("%.2f", holding.currentPrice),
                     modifier = Modifier.weight(1f)
                 )
                 StatItem(
                     label = "Value",
-                    value = String.format("%.0f", holding.marketValue),
+                    value = if (isBlurred) "•••" else String.format("%.0f", holding.marketValue),
                     modifier = Modifier.weight(1f)
                 )
             }

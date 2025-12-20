@@ -1,6 +1,7 @@
 package com.egx.portfoliotracker.di
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.egx.portfoliotracker.data.local.CertificateDao
 import com.egx.portfoliotracker.data.local.CostHistoryDao
 import com.egx.portfoliotracker.data.local.DividendDao
@@ -81,6 +82,12 @@ object AppModule {
     @Singleton
     fun provideStockAnalysisService(): StockAnalysisService {
         return StockAnalysisService()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideSharedPreferences(@ApplicationContext context: Context): SharedPreferences {
+        return context.getSharedPreferences("portfolio_prefs", Context.MODE_PRIVATE)
     }
     
     @Provides

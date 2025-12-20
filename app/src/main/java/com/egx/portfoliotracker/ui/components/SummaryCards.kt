@@ -45,8 +45,10 @@ fun PortfolioValueCard(
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            Text(
-                text = "EGP ${String.format("%,.0f", summary.totalValue)}",
+            BlurredAmountNoDecimals(
+                amount = summary.totalValue,
+                currency = "EGP",
+                isBlurred = isBlurred,
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimary

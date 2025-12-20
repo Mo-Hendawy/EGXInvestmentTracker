@@ -168,6 +168,7 @@ fun PortfolioDonutChart(
 @Composable
 fun StockAllocationLegend(
     allocations: List<Pair<String, Double>>,
+    isBlurred: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -196,7 +197,7 @@ fun StockAllocationLegend(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = String.format("%.2f%%", percentage),
+                        text = if (isBlurred) "••%" else String.format("%.2f%%", percentage),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

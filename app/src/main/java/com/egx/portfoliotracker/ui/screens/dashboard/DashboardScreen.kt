@@ -184,6 +184,7 @@ fun DashboardScreen(
                                     // Legend below the chart
                                     StockAllocationLegend(
                                         allocations = stockAllocation.take(10),
+                                        isBlurred = isAmountsBlurred,
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }

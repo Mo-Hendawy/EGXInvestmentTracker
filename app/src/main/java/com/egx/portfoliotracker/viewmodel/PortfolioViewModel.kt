@@ -12,25 +12,31 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import android.content.SharedPreferences
 import javax.inject.Inject
 
 @HiltViewModel
 class PortfolioViewModel @Inject constructor(
     private val repository: PortfolioRepository,
     private val stockAnalysisService: StockAnalysisService,
-    private val stockPriceService: StockPriceService
+    private val stockPriceService: StockPriceService,
+    private val sharedPreferences: SharedPreferences
 ) : ViewModel() {
     
     // UI State
     private val _uiState = MutableStateFlow(PortfolioUiState())
     val uiState: StateFlow<PortfolioUiState> = _uiState.asStateFlow()
     
-    // Privacy blur state
-    private val _isAmountsBlurred = MutableStateFlow(false)
+    // Privacy blur state - load from preferences
+    private val _isAmountsBlurred = MutableStateFlow(
+        sharedPreferences.getBoolean("is_amounts_blurred", false)
+    )
     val isAmountsBlurred: StateFlow<Boolean> = _isAmountsBlurred.asStateFlow()
     
     fun toggleAmountsBlur() {
-        _isAmountsBlurred.value = !_isAmountsBlurred.value
+        val newValue = !_isAmountsBlurred.value
+        _isAmountsBlurred.value = newValue
+        sharedPreferences.edit().putBoolean("is_amounts_blurred", newValue).apply()
     }
     
     // Holdings
