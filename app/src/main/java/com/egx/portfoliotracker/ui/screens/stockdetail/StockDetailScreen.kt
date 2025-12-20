@@ -20,6 +20,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.height
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.egx.portfoliotracker.data.model.*
@@ -277,30 +280,33 @@ fun StockDetailScreen(
                 ) {
                     Button(
                         onClick = { showBuyDialog = true },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen)
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ProfitGreen),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Buy")
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("Buy", maxLines = 1, style = MaterialTheme.typography.labelSmall, overflow = TextOverflow.Clip)
                     }
                     Button(
                         onClick = { showSellDialog = true },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = LossRed)
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = LossRed),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                     ) {
-                        Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Sell")
+                        Icon(Icons.Default.Remove, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("Sell", maxLines = 1, style = MaterialTheme.typography.labelSmall, overflow = TextOverflow.Clip)
                     }
                     Button(
                         onClick = { showDividendDialog = true },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = EgyptianGold)
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = EgyptianGold),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                     ) {
-                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Dividend")
+                        Icon(Icons.Default.Payments, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("Dividend", maxLines = 1, style = MaterialTheme.typography.labelSmall, overflow = TextOverflow.Ellipsis, softWrap = false)
                     }
                 }
             }
@@ -529,19 +535,19 @@ fun StockDetailScreen(
                     Tab(
                         selected = selectedTab == 0,
                         onClick = { selectedTab = 0 },
-                        text = { Text("Cost Changes") }
+                        text = { Text("Cost Changes", maxLines = 1) }
                     )
                     Tab(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
-                        text = { Text("Transactions") }
+                        text = { Text("Transactions", maxLines = 1) }
                     )
                     Tab(
                         selected = selectedTab == 2,
                         onClick = { selectedTab = 2 },
                         text = { 
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Dividends")
+                                Text("Dividends", maxLines = 1)
                                 if (dividends.isNotEmpty()) {
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Badge { Text("${dividends.size}") }
