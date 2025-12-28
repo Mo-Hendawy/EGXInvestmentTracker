@@ -22,6 +22,10 @@ data class Holding(
     val sector: String = "",
     val notes: String = "",
     val targetPercentage: Double? = null,  // Target allocation percentage (0-100)
+    val fairValue: Double? = null,  // User-defined fair value override (optional)
+    val eps: Double? = null,  // Earnings Per Share (from company financials)
+    val growthRate: Double? = null,  // Expected annual EPS growth rate (%)
+    val peRatio: Double? = null,  // Current P/E ratio
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
@@ -31,6 +35,17 @@ data class Holding(
     val profitLoss: Double get() = marketValue - totalCost
     val profitLossPercent: Double get() = if (totalCost > 0) (profitLoss / totalCost) * 100 else 0.0
     val isProfit: Boolean get() = profitLoss >= 0
+    
+    // Calculate fair value using Benjamin Graham's formula: EPS × (8.5 + 2g)
+    // Where g is the expected growth rate
+    val calculatedFairValue: Double? get() {
+        val epsVal = eps ?: return null
+        val growth = growthRate ?: 5.0  // Default 5% growth if not specified
+        return epsVal * (8.5 + 2 * growth)
+    }
+    
+    // Use user-defined fair value if set, otherwise use calculated
+    val effectiveFairValue: Double? get() = fairValue ?: calculatedFairValue
 }
 
 enum class HoldingRole(val displayName: String, val description: String) {

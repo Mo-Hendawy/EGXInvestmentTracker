@@ -14,13 +14,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.egx.portfoliotracker.data.model.PortfolioSummary
 import com.egx.portfoliotracker.ui.theme.*
-import com.egx.portfoliotracker.ui.components.BlurredAmountNoDecimals
-import com.egx.portfoliotracker.ui.components.BlurredPercentage
 
 @Composable
 fun PortfolioValueCard(
     summary: PortfolioSummary,
-    isBlurred: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val profitColor = if (summary.totalProfitLoss >= 0) ProfitGreen else LossRed
@@ -45,10 +42,8 @@ fun PortfolioValueCard(
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            BlurredAmountNoDecimals(
-                amount = summary.totalValue,
-                currency = "EGP",
-                isBlurred = isBlurred,
+            Text(
+                text = "EGP ${String.format("%,.0f", summary.totalValue)}",
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimary
@@ -66,10 +61,8 @@ fun PortfolioValueCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)
                     )
-                    BlurredAmountNoDecimals(
-                        amount = summary.totalCost,
-                        currency = "EGP",
-                        isBlurred = isBlurred,
+                    Text(
+                        text = "EGP ${String.format("%,.0f", summary.totalCost)}",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onPrimary
                     )
@@ -91,27 +84,13 @@ fun PortfolioValueCard(
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            BlurredAmountNoDecimals(
-                                amount = summary.totalProfitLoss,
-                                currency = if (summary.totalProfitLoss >= 0) "+EGP" else "EGP",
-                                isBlurred = isBlurred,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (summary.totalProfitLoss >= 0) 
-                                    ProfitGreenLight else LossRedLight
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            BlurredPercentage(
-                                percentage = summary.totalProfitLossPercent,
-                                isBlurred = isBlurred,
-                                showSign = false,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (summary.totalProfitLoss >= 0) 
-                                    ProfitGreenLight else LossRedLight
-                            )
-                        }
+                        Text(
+                            text = "${if (summary.totalProfitLoss >= 0) "+" else ""}${String.format("%,.0f", summary.totalProfitLoss)} (${String.format("%.2f", summary.totalProfitLossPercent)}%)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (summary.totalProfitLoss >= 0) 
+                                ProfitGreenLight else LossRedLight
+                        )
                     }
                 }
             }

@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.egx.portfoliotracker.ui.theme.ChartColors
+import com.egx.portfoliotracker.ui.theme.ProfitGreen
+import com.egx.portfoliotracker.ui.theme.LossRed
 
 /**
  * Animated Donut/Pie Chart for allocation visualization
@@ -82,10 +84,10 @@ fun DonutChart(
 fun PortfolioDonutChart(
     stockAllocations: List<Pair<String, Double>>,
     totalValue: Double,
-    isBlurred: Boolean = false,
     modifier: Modifier = Modifier,
     strokeWidth: Dp = 28.dp,
-    animationDuration: Int = 1000
+    animationDuration: Int = 1000,
+    isBlurred: Boolean = false
 ) {
     val total = stockAllocations.sumOf { it.second }
     if (total == 0.0) return
@@ -110,6 +112,10 @@ fun PortfolioDonutChart(
             val canvasSize = size.minDimension
             val stroke = strokeWidth.toPx()
             
+            // Center the chart in the canvas
+            val offsetX = (size.width - canvasSize) / 2
+            val offsetY = (size.height - canvasSize) / 2
+            
             var startAngle = -90f
             
             stockAllocations.forEachIndexed { index, (_, percentage) ->
@@ -125,7 +131,7 @@ fun PortfolioDonutChart(
                     startAngle = startAngle + gapAngle / 2,
                     sweepAngle = adjustedSweep,
                     useCenter = false,
-                    topLeft = Offset(stroke / 2, stroke / 2),
+                    topLeft = Offset(offsetX + stroke / 2, offsetY + stroke / 2),
                     size = Size(canvasSize - stroke, canvasSize - stroke),
                     style = Stroke(width = stroke, cap = StrokeCap.Butt)
                 )
@@ -138,26 +144,17 @@ fun PortfolioDonutChart(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (isBlurred) {
-                Text(
-                    text = "••••••",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            } else {
-                Text(
-                    text = String.format("%,.2f", totalValue),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "EGP",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            Text(
+                text = if (isBlurred) "••••••" else String.format("%,.2f", totalValue),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = "EGP",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -168,7 +165,7 @@ fun PortfolioDonutChart(
 @Composable
 fun StockAllocationLegend(
     allocations: List<Pair<String, Double>>,
-    isBlurred: Boolean = false,
+    targetPercentages: Map<String, Double?> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -177,6 +174,7 @@ fun StockAllocationLegend(
     ) {
         allocations.forEachIndexed { index, (symbol, percentage) ->
             val color = ChartColors[index % ChartColors.size]
+            val targetPercentage = targetPercentages[symbol]
             
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -197,10 +195,22 @@ fun StockAllocationLegend(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = if (isBlurred) "••%" else String.format("%.2f%%", percentage),
+                        text = String.format("%.2f%%", percentage),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    targetPercentage?.let { target ->
+                        val targetColor = if (target > percentage) 
+                            ProfitGreen 
+                        else 
+                            LossRed
+                        Text(
+                            text = String.format("%.2f%%", target),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = targetColor,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
                 Box(
                     modifier = Modifier

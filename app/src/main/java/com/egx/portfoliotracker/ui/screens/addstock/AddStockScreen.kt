@@ -240,11 +240,7 @@ fun AddStockScreen(
                     // Shares input
                     OutlinedTextField(
                         value = shares,
-                        onValueChange = { newValue ->
-                            // Allow digits only, but preserve the full input
-                            val filtered = newValue.filter { it.isDigit() }
-                            shares = filtered
-                        },
+                        onValueChange = { shares = it.filter { c -> c.isDigit() } },
                         label = { Text("Number of Shares") },
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -255,28 +251,7 @@ fun AddStockScreen(
                     // Average Cost input
                     OutlinedTextField(
                         value = avgCost,
-                        onValueChange = { newValue ->
-                            // Allow digits and one decimal point
-                            val filtered = if (newValue.isEmpty()) {
-                                ""
-                            } else {
-                                val parts = newValue.split('.')
-                                when {
-                                    parts.size == 1 -> parts[0].filter { it.isDigit() }
-                                    parts.size == 2 -> {
-                                        val beforeDecimal = parts[0].filter { it.isDigit() }
-                                        val afterDecimal = parts[1].filter { it.isDigit() }
-                                        if (beforeDecimal.isEmpty() && afterDecimal.isEmpty()) {
-                                            ""
-                                        } else {
-                                            "$beforeDecimal.$afterDecimal"
-                                        }
-                                    }
-                                    else -> avgCost // Keep old value if multiple decimal points
-                                }
-                            }
-                            avgCost = filtered
-                        },
+                        onValueChange = { avgCost = it.filter { c -> c.isDigit() || c == '.' } },
                         label = { Text("Your Average Cost (EGP)") },
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),

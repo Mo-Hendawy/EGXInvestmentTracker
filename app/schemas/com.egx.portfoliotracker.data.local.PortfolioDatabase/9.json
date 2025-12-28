@@ -1,0 +1,28 @@
+[
+  {
+    "version": 9,
+    "identityHash": "abc123",
+    "entities": [
+      {
+        "tableName": "watchlist",
+        "createSql": "CREATE TABLE IF NOT EXISTS `watchlist` (`id` TEXT NOT NULL, `stockSymbol` TEXT NOT NULL, `stockNameEn` TEXT NOT NULL, `stockNameAr` TEXT NOT NULL, `sector` TEXT NOT NULL DEFAULT '', `targetPrice` REAL, `notes` TEXT NOT NULL DEFAULT '', `createdAt` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {"fieldPath": "id", "columnName": "id", "affinity": "TEXT", "notNull": true},
+          {"fieldPath": "stockSymbol", "columnName": "stockSymbol", "affinity": "TEXT", "notNull": true},
+          {"fieldPath": "stockNameEn", "columnName": "stockNameEn", "affinity": "TEXT", "notNull": true},
+          {"fieldPath": "stockNameAr", "columnName": "stockNameAr", "affinity": "TEXT", "notNull": true},
+          {"fieldPath": "sector", "columnName": "sector", "affinity": "TEXT", "notNull": true},
+          {"fieldPath": "targetPrice", "columnName": "targetPrice", "affinity": "REAL", "notNull": false},
+          {"fieldPath": "notes", "columnName": "notes", "affinity": "TEXT", "notNull": true},
+          {"fieldPath": "createdAt", "columnName": "createdAt", "affinity": "INTEGER", "notNull": true},
+          {"fieldPath": "updatedAt", "columnName": "updatedAt", "affinity": "INTEGER", "notNull": true}
+        ],
+        "primaryKey": {"columnNames": ["id"], "autoGenerate": false},
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": []
+  }
+]

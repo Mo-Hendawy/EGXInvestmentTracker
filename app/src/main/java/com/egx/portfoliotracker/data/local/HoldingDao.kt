@@ -66,9 +66,9 @@ interface HoldingDao {
     @Query("UPDATE holdings SET currentPrice = :price, updatedAt = :timestamp WHERE stockSymbol = :symbol")
     suspend fun updateCurrentPrice(symbol: String, price: Double, timestamp: Long = System.currentTimeMillis())
     
+    @Query("UPDATE holdings SET targetPercentage = :targetPercentage, updatedAt = :timestamp WHERE id = :holdingId")
+    suspend fun updateTargetPercentage(holdingId: String, targetPercentage: Double?, timestamp: Long)
+    
     @Query("UPDATE holdings SET stockNameEn = :nameEn, stockNameAr = :nameAr, sector = :sector, updatedAt = :timestamp WHERE stockSymbol = :symbol")
     suspend fun updateStockName(symbol: String, nameEn: String, nameAr: String, sector: String, timestamp: Long = System.currentTimeMillis())
-    
-    @Query("UPDATE holdings SET targetPercentage = :targetPercentage, updatedAt = :timestamp WHERE id = :id")
-    suspend fun updateTargetPercentage(id: String, targetPercentage: Double?, timestamp: Long = System.currentTimeMillis())
 }

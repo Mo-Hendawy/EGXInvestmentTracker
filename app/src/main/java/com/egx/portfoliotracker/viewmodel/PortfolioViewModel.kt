@@ -3,41 +3,25 @@ package com.egx.portfoliotracker.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.egx.portfoliotracker.data.model.*
-import com.egx.portfoliotracker.data.remote.StockAnalysisService
+import com.egx.portfoliotracker.data.model.CertificateIncomeDetail
+import com.egx.portfoliotracker.data.model.MonthlyCertificateIncome
 import com.egx.portfoliotracker.data.remote.StockPriceResult
-import com.egx.portfoliotracker.data.remote.StockPriceService
 import com.egx.portfoliotracker.data.repository.PortfolioRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import android.content.SharedPreferences
 import javax.inject.Inject
 
 @HiltViewModel
 class PortfolioViewModel @Inject constructor(
-    private val repository: PortfolioRepository,
-    private val stockAnalysisService: StockAnalysisService,
-    private val stockPriceService: StockPriceService,
-    private val sharedPreferences: SharedPreferences
+    private val repository: PortfolioRepository
 ) : ViewModel() {
     
     // UI State
     private val _uiState = MutableStateFlow(PortfolioUiState())
     val uiState: StateFlow<PortfolioUiState> = _uiState.asStateFlow()
-    
-    // Privacy blur state - load from preferences
-    private val _isAmountsBlurred = MutableStateFlow(
-        sharedPreferences.getBoolean("is_amounts_blurred", false)
-    )
-    val isAmountsBlurred: StateFlow<Boolean> = _isAmountsBlurred.asStateFlow()
-    
-    fun toggleAmountsBlur() {
-        val newValue = !_isAmountsBlurred.value
-        _isAmountsBlurred.value = newValue
-        sharedPreferences.edit().putBoolean("is_amounts_blurred", newValue).apply()
-    }
     
     // Holdings
     val holdings: StateFlow<List<Holding>> = repository.getAllHoldings()
@@ -68,6 +52,14 @@ class PortfolioViewModel @Inject constructor(
     
     val totalMonthlyIncome: StateFlow<Double?> = repository.getTotalMonthlyIncome()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    
+    // Amount blur state
+    private val _isAmountsBlurred = MutableStateFlow(false)
+    val isAmountsBlurred: StateFlow<Boolean> = _isAmountsBlurred.asStateFlow()
+    
+    fun toggleAmountsBlur() {
+        _isAmountsBlurred.value = !_isAmountsBlurred.value
+    }
     
     // Performance breakdown
     private val _performanceBreakdown = MutableStateFlow<List<PerformanceBreakdown>>(emptyList())
@@ -104,82 +96,49 @@ class PortfolioViewModel @Inject constructor(
     private val _currentStockPrice = MutableStateFlow<StockPriceResult?>(null)
     val currentStockPrice: StateFlow<StockPriceResult?> = _currentStockPrice.asStateFlow()
     
+    // ========== REALIZED GAINS ==========
+    private val _realizedGains = MutableStateFlow<List<com.egx.portfoliotracker.data.model.RealizedGain>>(emptyList())
+    val realizedGains: StateFlow<List<com.egx.portfoliotracker.data.model.RealizedGain>> = _realizedGains.asStateFlow()
+    
+    // ========== STOCK ANALYSIS ==========
+    private val _stockAnalyses = MutableStateFlow<List<StockAnalysis>>(emptyList())
+    val stockAnalyses: StateFlow<List<StockAnalysis>> = _stockAnalyses.asStateFlow()
+    
     init {
         viewModelScope.launch {
+            // Attempt data recovery first
+            repository.attemptDataRecovery()
             repository.initializeStocks()
-            // Update any CIB certificates to HSBC
-            repository.updateAllCertificatesBankName("Commercial International Bank (CIB)", "HSBC")
-            // Always sync stock names FIRST to fix any wrong names
-            repository.syncStockNames()
-            // Restore portfolio data
-            restorePortfolioData()
-            // Sync again after restore to ensure correct names
-            repository.syncStockNames()
         }
         
         refreshAllPrices()
         loadPerformanceData()
+        refreshRealizedGains()
+        refreshStockAnalyses()
     }
     
-    /**
-     * Restore portfolio data from backup
-     */
-    private suspend fun restorePortfolioData() {
-        // Check if holdings already exist
-        val existingHoldings = repository.getAllHoldings().first()
-        if (existingHoldings.isNotEmpty()) {
-            return // Data already exists, don't restore
-        }
-        
-        // Wait for stocks to be initialized
-        repository.initializeStocks()
-        
-        // Get all stocks to match names
-        val stocks = repository.getAllStocks().first()
-        val stockMap = stocks.associateBy { it.symbol }
-        
-        // Portfolio data from backup
-        val portfolioData = listOf(
-            "ABUK" to Pair(1665, 47.28),
-            "AMOC" to Pair(5898, 6.87),
-            "BONY" to Pair(5592, 4.25),
-            "COMI" to Pair(1345, 101.62),
-            "EFID" to Pair(688, 18.26),
-            "EGAL" to Pair(735, 188.83),
-            "JUFO" to Pair(6313, 22.13),
-            "MFPC" to Pair(4431, 29.15),
-            "MICH" to Pair(10274, 33.15),
-            "POUL" to Pair(566, 24.78),
-            "SWDY" to Pair(1866, 77.49)
-        )
-        
-        // Create holdings
-        for ((symbol, data) in portfolioData) {
-            val shares = data.first
-            val avgCost = data.second
-            val stock = stockMap[symbol]
-            
-            if (stock != null) {
-                val holding = Holding(
-                    id = java.util.UUID.randomUUID().toString(),
-                    stockSymbol = symbol,
-                    stockNameEn = stock.nameEn,
-                    stockNameAr = stock.nameAr,
-                    shares = shares,
-                    avgCost = avgCost,
-                    currentPrice = avgCost, // Will be updated by price refresh
-                    sector = stock.sector,
-                    notes = "",
-                    targetPercentage = null,
-                    createdAt = System.currentTimeMillis(),
-                    updatedAt = System.currentTimeMillis()
+    fun attemptDataRecovery() {
+        viewModelScope.launch {
+            val recovered = repository.attemptDataRecovery()
+            val counts = repository.getDatabaseCounts()
+            _uiState.update { 
+                it.copy(
+                    lastRefreshMessage = if (recovered) {
+                        "Data recovered! Holdings: ${counts["holdings"]}, Certificates: ${counts["certificates"]}, Expenses: ${counts["expenses"]}"
+                    } else {
+                        "No data found. Counts - Holdings: ${counts["holdings"]}, Certificates: ${counts["certificates"]}, Expenses: ${counts["expenses"]}"
+                    }
                 )
-                repository.addHolding(holding)
+            }
+            if (recovered) {
+                // Reload all data after recovery
+                loadPerformanceData()
             }
         }
-        
-        // Sync stock names after adding holdings to ensure correct names
-        repository.syncStockNames()
+    }
+    
+    suspend fun getDatabaseCounts(): Map<String, Int> {
+        return repository.getDatabaseCounts()
     }
     
     private fun loadPerformanceData() {
@@ -325,13 +284,6 @@ class PortfolioViewModel @Inject constructor(
     fun updateHolding(holding: Holding) {
         viewModelScope.launch {
             repository.updateHolding(holding)
-            _uiState.update { it.copy(showAddSuccess = true) }
-        }
-    }
-    
-    fun updateHoldingTargetPercentage(holdingId: String, targetPercentage: Double?) {
-        viewModelScope.launch {
-            repository.updateHoldingTargetPercentage(holdingId, targetPercentage)
         }
     }
     
@@ -416,58 +368,91 @@ class PortfolioViewModel @Inject constructor(
         return repository.getHoldingsBySector(sector)
     }
     
-    /**
-     * Get stock analysis (fair value and buy zones) for a holding
-     * Uses existing price data, no extra API calls
-     */
-    suspend fun getStockAnalysis(holding: Holding): com.egx.portfoliotracker.data.model.StockAnalysis? {
-        return try {
-            // Fetch current price data (we already have this cached)
-            val priceResult = stockPriceService.getPrice(holding.stockSymbol)
-            
-            if (priceResult is StockPriceResult.Success) {
-                stockAnalysisService.analyzeStock(
-                    symbol = holding.stockSymbol,
-                    currentPrice = priceResult.price,
-                    high = priceResult.high,
-                    low = priceResult.low,
-                    open = priceResult.open,
-                    previousClose = priceResult.previousClose,
-                    avgCost = holding.avgCost
-                )
-            } else {
-                // If price fetch fails, still try to analyze with available data
-                stockAnalysisService.analyzeStock(
-                    symbol = holding.stockSymbol,
-                    currentPrice = holding.currentPrice,
-                    high = null,
-                    low = null,
-                    open = null,
-                    previousClose = null,
-                    avgCost = holding.avgCost
-                )
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("PortfolioViewModel", "Error analyzing stock ${holding.stockSymbol}", e)
-            null
+    // Update target percentage for a holding
+    fun updateHoldingTargetPercentage(holdingId: String, targetPercentage: Double?) {
+        viewModelScope.launch {
+            repository.updateHoldingTargetPercentage(holdingId, targetPercentage)
         }
     }
     
-    // ============ CERTIFICATES ============
+    // ========== WATCHLIST ==========
     
-    suspend fun addCertificate(certificate: Certificate) {
+    val watchlistItems: StateFlow<List<Watchlist>> = repository.getAllWatchlistItems()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    
+    fun addWatchlistItem(watchlist: Watchlist) {
+        viewModelScope.launch {
+            repository.addWatchlistItem(watchlist)
+        }
+    }
+    
+    fun updateWatchlistItem(watchlist: Watchlist) {
+        viewModelScope.launch {
+            repository.updateWatchlistItem(watchlist)
+        }
+    }
+    
+    fun deleteWatchlistItem(watchlist: Watchlist) {
+        viewModelScope.launch {
+            repository.deleteWatchlistItem(watchlist)
+        }
+    }
+    
+    // ========== BACKUP/RESTORE ==========
+    
+    fun exportData(uri: android.net.Uri, callback: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            repository.exportData(uri, callback)
+        }
+    }
+    
+    fun importData(uri: android.net.Uri, callback: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            repository.importData(uri, callback)
+        }
+    }
+    
+    fun refreshRealizedGains() {
+        viewModelScope.launch {
+            _realizedGains.value = repository.getRealizedGains()
+        }
+    }
+    
+    fun refreshStockAnalyses() {
+        viewModelScope.launch {
+            try {
+                val analyses = repository.getStockAnalyses()
+                _stockAnalyses.value = analyses
+            } catch (e: Exception) {
+                // Handle error - set empty list on failure
+                _stockAnalyses.value = emptyList()
+            }
+        }
+    }
+    
+    // ========== PORTFOLIO SNAPSHOTS ==========
+    
+    val portfolioSnapshots: StateFlow<List<PortfolioSnapshot>> = repository.getPortfolioSnapshots()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    
+    // ========== GET ALL STOCKS ==========
+    
+    fun getAllStocks(): Flow<List<Stock>> = repository.getAllStocks()
+    
+    // Certificate operations
+    fun addCertificate(certificate: Certificate) {
         viewModelScope.launch {
             repository.addCertificate(certificate)
         }
     }
     
-    suspend fun updateCertificate(certificate: Certificate) {
+    fun updateCertificate(certificate: Certificate) {
         viewModelScope.launch {
             repository.updateCertificate(certificate)
         }
     }
     
-    suspend fun deleteCertificate(certificate: Certificate) {
+    fun deleteCertificate(certificate: Certificate) {
         viewModelScope.launch {
             repository.deleteCertificate(certificate)
         }
@@ -477,58 +462,235 @@ class PortfolioViewModel @Inject constructor(
         return repository.getMonthlyCertificateIncome(year, month)
     }
     
-    suspend fun getMonthlyCertificateIncomeRange(startYear: Int, startMonth: Int, endYear: Int, endMonth: Int): List<MonthlyCertificateIncome> {
-        return repository.getMonthlyCertificateIncomeRange(startYear, startMonth, endYear, endMonth)
-    }
-    
-    suspend fun getUpcomingMaturities(limit: Int = 10): List<Certificate> {
-        return repository.getUpcomingMaturities(limit)
-    }
-    
-    /**
-     * Get daily credit schedule for current month
-     * Shows which days have credits and how much
-     */
-    suspend fun getDailyCreditScheduleForCurrentMonth(): List<DailyCredit> {
-        val calendar = java.util.Calendar.getInstance()
-        val currentYear = calendar.get(java.util.Calendar.YEAR)
-        val currentMonth = calendar.get(java.util.Calendar.MONTH) + 1
-        
-        val allCertificates = repository.getAllCertificates().first()
-        val dailyCredits = mutableMapOf<Int, MutableList<CertificateIncomeDetail>>()
-        
-        allCertificates.forEach { cert ->
-            val income = cert.getMonthlyIncomeForMonth(currentYear, currentMonth)
-            if (income > 0 && cert.interestPaymentFrequency == InterestFrequency.MONTHLY) {
-                val paymentDay = cert.getPaymentDayOfMonth()
-                val dueDate = cert.getInterestDueDateForMonth(currentYear, currentMonth)
-                
-                val detail = CertificateIncomeDetail(
-                    certificateId = cert.id,
-                    certificateNumber = cert.certificateNumber,
-                    bankName = cert.bankName,
-                    amount = income,
-                    dueDate = dueDate ?: 0L
-                )
-                
-                dailyCredits.getOrPut(paymentDay) { mutableListOf() }.add(detail)
-            }
-        }
-        
-        return dailyCredits.map { (day, details) ->
-            DailyCredit(
-                day = day,
-                totalAmount = details.sumOf { it.amount },
-                certificates = details
-            )
-        }.sortedBy { it.day }
-    }
-    
-    /**
-     * Bulk import certificates - useful for importing from statements
-     */
-    suspend fun importCertificates(certificates: List<Certificate>) {
+    fun initializeCertificatesFromNotebook() {
         viewModelScope.launch {
+            val certificates = listOf(
+                // 2024 Certificates
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "235",
+                    principalAmount = 300000.0,
+                    durationYears = 3,
+                    annualInterestRate = 22.0,
+                    purchaseDate = getDateTimestamp(2024, 7, 17),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "236",
+                    principalAmount = 70000.0,
+                    durationYears = 3,
+                    annualInterestRate = 22.0,
+                    purchaseDate = getDateTimestamp(2024, 7, 24),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "237",
+                    principalAmount = 70000.0,
+                    durationYears = 3,
+                    annualInterestRate = 22.0,
+                    purchaseDate = getDateTimestamp(2024, 8, 4),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "238",
+                    principalAmount = 70000.0,
+                    durationYears = 3,
+                    annualInterestRate = 22.0,
+                    purchaseDate = getDateTimestamp(2024, 8, 29),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "239",
+                    principalAmount = 80000.0,
+                    durationYears = 3,
+                    annualInterestRate = 22.0,
+                    purchaseDate = getDateTimestamp(2024, 9, 3),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "900",
+                    principalAmount = 70000.0,
+                    durationYears = 3,
+                    annualInterestRate = 22.0,
+                    purchaseDate = getDateTimestamp(2024, 9, 26),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "901",
+                    principalAmount = 80000.0,
+                    durationYears = 3,
+                    annualInterestRate = 22.0,
+                    purchaseDate = getDateTimestamp(2024, 10, 7),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "902",
+                    principalAmount = 70000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2024, 10, 30),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "903",
+                    principalAmount = 80000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2024, 11, 5),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "904",
+                    principalAmount = 70000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2024, 12, 5),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "905",
+                    principalAmount = 120000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2024, 12, 16),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "906",
+                    principalAmount = 70000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2024, 12, 26),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                
+                // 2025 Certificates
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "907",
+                    principalAmount = 100000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2025, 1, 8),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "908",
+                    principalAmount = 70000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2025, 1, 27),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "909",
+                    principalAmount = 100000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2025, 2, 5),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "910",
+                    principalAmount = 60000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2025, 2, 27),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "911",
+                    principalAmount = 450000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2025, 3, 9),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "912",
+                    principalAmount = 120000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2025, 3, 27),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "913",
+                    principalAmount = 210000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2025, 7, 6),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                ),
+                Certificate(
+                    bankName = "HSBC",
+                    certificateNumber = "914",
+                    principalAmount = 80000.0,
+                    durationYears = 3,
+                    annualInterestRate = 20.5,
+                    purchaseDate = getDateTimestamp(2025, 9, 15),
+                    interestPaymentFrequency = InterestFrequency.MONTHLY,
+                    status = CertificateStatus.ACTIVE,
+                    notes = ""
+                )
+            )
+            
+            // Import all certificates
             certificates.forEach { cert ->
                 repository.addCertificate(cert)
             }
@@ -536,220 +698,67 @@ class PortfolioViewModel @Inject constructor(
     }
     
     /**
-     * Initialize all 20 certificates from notebook
-     * All certificates: 3 years duration, Monthly interest payment
-     * All certificates are from HSBC
+     * Initialize holdings from CSV/notebook data
+     * Data extracted from transcript:
+     * ABUK: 1665 shares @ 47.28 avg, current: 47
+     * AMOC: 5898 shares @ 6.87 avg, current: 6.94
+     * COMI: 1179 shares @ 101.42 avg, current: 104
+     * EFID: 688 shares @ 18.26 avg, current: 26.09
+     * EGAL: 735 shares @ 188.83 avg, current: 204.23
+     * JUFO: 6313 shares @ 22.13 avg, current: 23.74
+     * MFPC: 4431 shares @ 29.15 avg, current: 28.91
+     * MICH: 10274 shares @ 33.15 avg, current: 28.72
+     * POUL: 1086 shares @ 24.78 avg, current: 26.4
+     * SWDY: 1866 shares @ 77.49 avg, current: 76.16
      */
-    suspend fun initializeCertificatesFromNotebook() {
-        val certificates = listOf(
-            // 2024 Certificates
-        Certificate(
-            bankName = "HSBC",
-            certificateNumber = "235",
-            principalAmount = 300000.0,
-            durationYears = 3,
-            annualInterestRate = 22.0,
-            purchaseDate = getDateTimestamp(2024, 7, 17),
-            interestPaymentFrequency = InterestFrequency.MONTHLY,
-            status = CertificateStatus.ACTIVE,
-            notes = ""
-        ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 70000.0,
-                durationYears = 3,
-                annualInterestRate = 22.0,
-                purchaseDate = getDateTimestamp(2024, 7, 24),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = "236",
-                notes = ""
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 70000.0,
-                durationYears = 3,
-                annualInterestRate = 22.0,
-                purchaseDate = getDateTimestamp(2024, 8, 4),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 237"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 70000.0,
-                durationYears = 3,
-                annualInterestRate = 22.0,
-                purchaseDate = getDateTimestamp(2024, 8, 29),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 238"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 80000.0,
-                durationYears = 3,
-                annualInterestRate = 22.0,
-                purchaseDate = getDateTimestamp(2024, 9, 3),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 239"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 70000.0,
-                durationYears = 3,
-                annualInterestRate = 22.0,
-                purchaseDate = getDateTimestamp(2024, 9, 26),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 900"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 80000.0,
-                durationYears = 3,
-                annualInterestRate = 22.0,
-                purchaseDate = getDateTimestamp(2024, 10, 7),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 901"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 70000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2024, 10, 30),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 902"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 80000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2024, 11, 5),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 903"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 70000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2024, 12, 5),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 904"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 120000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2024, 12, 16),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 905"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 70000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2024, 12, 26),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 906"
-            ),
-            
-            // 2025 Certificates
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 100000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2025, 1, 8),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 907"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 70000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2025, 1, 27),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 908"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 100000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2025, 2, 5),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 909"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 60000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2025, 2, 27),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 910"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 450000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2025, 3, 9),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 911"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 120000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2025, 3, 27),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 912"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 210000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2025, 7, 6),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 913"
-            ),
-            Certificate(
-                bankName = "HSBC",
-                principalAmount = 80000.0,
-                durationYears = 3,
-                annualInterestRate = 20.5,
-                purchaseDate = getDateTimestamp(2025, 9, 15),
-                interestPaymentFrequency = InterestFrequency.MONTHLY,
-                status = CertificateStatus.ACTIVE,
-                certificateNumber = " 914"
-            )
-        )
-        
-        importCertificates(certificates)
+    fun initializeHoldingsFromNotebook() {
+        viewModelScope.launch {
+            try {
+                // CRITICAL: Initialize stocks FIRST to ensure correct names are in database
+                repository.initializeStocks()
+                
+                // Get all stocks from database (now with correct names)
+                val stocks = repository.getAllStocks().first()
+                val stockMap = stocks.associateBy { it.symbol }
+                
+                // Portfolio data from CSV/notebook
+                val portfolioData = listOf(
+                    Pair("ABUK", Triple(1665, 47.28, 47.0)),
+                    Pair("AMOC", Triple(5898, 6.87, 6.94)),
+                    Pair("COMI", Triple(1179, 101.42, 104.0)),
+                    Pair("EFID", Triple(688, 18.26, 26.09)),
+                    Pair("EGAL", Triple(735, 188.83, 204.23)),
+                    Pair("JUFO", Triple(6313, 22.13, 23.74)),
+                    Pair("MFPC", Triple(4431, 29.15, 28.91)),
+                    Pair("MICH", Triple(10274, 33.15, 28.72)),
+                    Pair("POUL", Triple(1086, 24.78, 26.4)),
+                    Pair("SWDY", Triple(1866, 77.49, 76.16))
+                )
+                
+                // Create holdings
+                for ((symbol, data) in portfolioData) {
+                    val (shares, avgCost, currentPrice) = data
+                    val stock = stockMap[symbol]
+                    if (stock != null) {
+                        val holding = Holding(
+                            stockSymbol = stock.symbol,
+                            stockNameEn = stock.nameEn,
+                            stockNameAr = stock.nameAr,
+                            shares = shares,
+                            avgCost = avgCost,
+                            currentPrice = currentPrice,
+                            role = HoldingRole.CORE,
+                            status = HoldingStatus.HOLD,
+                            sector = stock.sector,
+                            notes = "Initialized from notebook"
+                        )
+                        repository.addHolding(holding)
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
     
     /**
@@ -769,6 +778,12 @@ class PortfolioViewModel @Inject constructor(
     }
 }
 
+data class DailyCredit(
+    val day: Int,
+    val totalAmount: Double,
+    val certificates: List<CertificateIncomeDetail>
+)
+
 data class PortfolioUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
@@ -783,12 +798,3 @@ sealed class PriceState {
     object Success : PriceState()
     data class Error(val message: String) : PriceState()
 }
-
-/**
- * Daily credit information for a specific day in the month
- */
-data class DailyCredit(
-    val day: Int,
-    val totalAmount: Double,
-    val certificates: List<CertificateIncomeDetail>
-)

@@ -14,6 +14,7 @@ import com.egx.portfoliotracker.data.model.Holding
 import com.egx.portfoliotracker.data.model.PortfolioSnapshot
 import com.egx.portfoliotracker.data.model.Stock
 import com.egx.portfoliotracker.data.model.Transaction
+import com.egx.portfoliotracker.data.model.Watchlist
 
 @Database(
     entities = [
@@ -24,12 +25,27 @@ import com.egx.portfoliotracker.data.model.Transaction
         Dividend::class,
         PortfolioSnapshot::class,
         Certificate::class,
-        Expense::class
+        Expense::class,
+        Watchlist::class
     ],
-    version = 8,
-    exportSchema = false
+    version = 11,
+    exportSchema = true
 )
 abstract class PortfolioDatabase : RoomDatabase() {
+    
+    /**
+     * Force checkpoint to merge WAL file into main database
+     * This can recover data that was in the WAL but not yet committed
+     */
+    fun forceCheckpoint() {
+        try {
+            val db = openHelper.writableDatabase as android.database.sqlite.SQLiteDatabase
+            db.execSQL("PRAGMA wal_checkpoint(FULL)")
+        } catch (e: Exception) {
+            // Ignore checkpoint errors - database might be in use
+            e.printStackTrace()
+        }
+    }
     
     abstract fun holdingDao(): HoldingDao
     abstract fun stockDao(): StockDao
@@ -38,10 +54,39 @@ abstract class PortfolioDatabase : RoomDatabase() {
     abstract fun dividendDao(): DividendDao
     abstract fun certificateDao(): CertificateDao
     abstract fun expenseDao(): ExpenseDao
+    abstract fun watchlistDao(): WatchlistDao
     
     companion object {
         @Volatile
         private var INSTANCE: PortfolioDatabase? = null
+        
+        // Migration from version 9 to 10 (add fairValue to holdings)
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add fairValue column to holdings table
+                database.execSQL("ALTER TABLE holdings ADD COLUMN fairValue REAL")
+            }
+        }
+        
+        // Migration from version 8 to 9 (add watchlist)
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Create watchlist table
+                database.execSQL("""
+                    CREATE TABLE IF NOT EXISTS watchlist (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        stockSymbol TEXT NOT NULL,
+                        stockNameEn TEXT NOT NULL,
+                        stockNameAr TEXT NOT NULL,
+                        sector TEXT NOT NULL DEFAULT '',
+                        targetPrice REAL,
+                        notes TEXT NOT NULL DEFAULT '',
+                        createdAt INTEGER NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )
+                """)
+            }
+        }
         
         // Migration from version 7 to 8 (add expenses)
         private val MIGRATION_7_8 = object : Migration(7, 8) {
@@ -64,54 +109,26 @@ abstract class PortfolioDatabase : RoomDatabase() {
         // Migration from version 6 to 7 (add targetPercentage to holdings)
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                // Check if targetPercentage column exists
-                val cursor = database.query("PRAGMA table_info(holdings)")
-                var columnExists = false
-                while (cursor.moveToNext()) {
-                    val columnName = cursor.getString(cursor.getColumnIndexOrThrow("name"))
-                    if (columnName == "targetPercentage") {
-                        columnExists = true
-                        break
-                    }
-                }
-                cursor.close()
-                
-                // Add targetPercentage column only if it doesn't exist
-                if (!columnExists) {
-                    database.execSQL("ALTER TABLE holdings ADD COLUMN targetPercentage REAL")
-                }
+                // Add targetPercentage column to holdings table
+                database.execSQL("ALTER TABLE holdings ADD COLUMN targetPercentage REAL")
             }
         }
         
         // Migration from version 5 to 6 (add certificateNumber field)
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(database: SupportSQLiteDatabase) {
-                // Check if certificateNumber column exists
-                val cursor = database.query("PRAGMA table_info(certificates)")
-                var columnExists = false
-                while (cursor.moveToNext()) {
-                    val columnName = cursor.getString(cursor.getColumnIndexOrThrow("name"))
-                    if (columnName == "certificateNumber") {
-                        columnExists = true
-                        break
-                    }
-                }
-                cursor.close()
+                // Add certificateNumber column
+                database.execSQL("ALTER TABLE certificates ADD COLUMN certificateNumber TEXT NOT NULL DEFAULT ''")
                 
-                // Add certificateNumber column only if it doesn't exist
-                if (!columnExists) {
-                    database.execSQL("ALTER TABLE certificates ADD COLUMN certificateNumber TEXT NOT NULL DEFAULT ''")
-                    
-                    // Migrate certificate numbers from notes to certificateNumber field
-                    // Extract "ID: XXX" from notes and put in certificateNumber
-                    database.execSQL("""
-                        UPDATE certificates 
-                        SET certificateNumber = CASE 
-                            WHEN notes LIKE 'ID: %' THEN SUBSTR(notes, 5)
-                            ELSE ''
-                        END
-                    """)
-                }
+                // Migrate certificate numbers from notes to certificateNumber field
+                // Extract "ID: XXX" from notes and put in certificateNumber
+                database.execSQL("""
+                    UPDATE certificates 
+                    SET certificateNumber = CASE 
+                        WHEN notes LIKE 'ID: %' THEN SUBSTR(notes, 5)
+                        ELSE ''
+                    END
+                """)
             }
         }
         
@@ -179,6 +196,18 @@ abstract class PortfolioDatabase : RoomDatabase() {
             }
         }
         
+        // Migration from version 10 to 11 (add EPS, growthRate, peRatio to holdings)
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add EPS column
+                database.execSQL("ALTER TABLE holdings ADD COLUMN eps REAL DEFAULT NULL")
+                // Add growthRate column
+                database.execSQL("ALTER TABLE holdings ADD COLUMN growthRate REAL DEFAULT NULL")
+                // Add peRatio column
+                database.execSQL("ALTER TABLE holdings ADD COLUMN peRatio REAL DEFAULT NULL")
+            }
+        }
+        
         // Migration from version 1 to 3 (for users who still have v1)
         private val MIGRATION_1_3 = object : Migration(1, 3) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -209,7 +238,8 @@ abstract class PortfolioDatabase : RoomDatabase() {
                     PortfolioDatabase::class.java,
                     "portfolio_database"
                 )
-                .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                // Removed fallbackToDestructiveMigration() to prevent data loss
                 .build()
                 INSTANCE = instance
                 instance

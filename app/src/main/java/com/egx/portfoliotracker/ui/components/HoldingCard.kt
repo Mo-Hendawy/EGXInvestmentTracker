@@ -1,8 +1,10 @@
 package com.egx.portfoliotracker.ui.components
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -15,31 +17,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import kotlin.math.abs
 import com.egx.portfoliotracker.data.model.Holding
 import com.egx.portfoliotracker.data.model.HoldingRole
 import com.egx.portfoliotracker.data.model.HoldingStatus
 import com.egx.portfoliotracker.ui.theme.*
-import com.egx.portfoliotracker.viewmodel.PortfolioViewModel
 import java.text.NumberFormat
 import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HoldingCard(
     holding: Holding,
     onClick: () -> Unit,
-    isBlurred: Boolean = false,
-    totalPortfolioValue: Double = 0.0,
-    modifier: Modifier = Modifier,
-    viewModel: PortfolioViewModel = hiltViewModel()
+    onLongClick: (() -> Unit)? = null,
+    recommendation: com.egx.portfoliotracker.data.model.Recommendation? = null,
+    fairValue: Double? = null,
+    modifier: Modifier = Modifier
 ) {
-    // Fetch stock analysis for fair value
-    var stockAnalysis by remember { mutableStateOf<com.egx.portfoliotracker.data.model.StockAnalysis?>(null) }
-    
-    LaunchedEffect(holding.id) {
-        stockAnalysis = viewModel.getStockAnalysis(holding)
-    }
     val profitColor by animateColorAsState(
         targetValue = if (holding.isProfit) ProfitGreen else LossRed,
         label = "profit_color"
@@ -51,7 +45,16 @@ fun HoldingCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
+            .then(
+                if (onLongClick != null) {
+                    Modifier.combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick
+                    )
+                } else {
+                    Modifier.clickable(onClick = onClick)
+                }
+            ),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
@@ -60,18 +63,26 @@ fun HoldingCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Header row: Symbol, Name, P/L indicator
+            // Header row: Symbol, Name, Recommendation, P/L indicator
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = holding.stockSymbol,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = holding.stockSymbol,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (recommendation != null) {
+                            RecommendationChip(recommendation = recommendation)
+                        }
+                    }
                     Text(
                         text = holding.stockNameEn,
                         style = MaterialTheme.typography.bodyMedium,
@@ -96,7 +107,7 @@ fun HoldingCard(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = if (isBlurred) "••%" else "${if (holding.isProfit) "+" else ""}${String.format("%.2f", holding.profitLossPercent)}%",
+                            text = "${if (holding.isProfit) "+" else ""}${String.format("%.2f", holding.profitLossPercent)}%",
                             color = profitColor,
                             fontWeight = FontWeight.Bold,
                             style = MaterialTheme.typography.bodyMedium
@@ -119,19 +130,43 @@ fun HoldingCard(
                 )
                 StatItem(
                     label = "Avg Cost",
-                    value = if (isBlurred) "•••" else String.format("%.2f", holding.avgCost),
+                    value = String.format("%.2f", holding.avgCost),
                     modifier = Modifier.weight(1f)
                 )
                 StatItem(
                     label = "Current",
-                    value = if (isBlurred) "•••" else String.format("%.2f", holding.currentPrice),
+                    value = String.format("%.2f", holding.currentPrice),
                     modifier = Modifier.weight(1f)
                 )
                 StatItem(
                     label = "Value",
-                    value = if (isBlurred) "•••" else String.format("%.0f", holding.marketValue),
+                    value = String.format("%.0f", holding.marketValue),
                     modifier = Modifier.weight(1f)
                 )
+            }
+            
+            // Fair Value row (always show if available from analysis or holding)
+            val displayFairValue = fairValue ?: holding.fairValue
+            if (displayFairValue != null) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    StatItem(
+                        label = "Fair Value",
+                        value = String.format("%.2f", displayFairValue),
+                        modifier = Modifier.weight(1f)
+                    )
+                    val fairValuePercent = ((displayFairValue / holding.currentPrice) - 1) * 100
+                    StatItem(
+                        label = "Fair Value %",
+                        value = String.format("%+.2f%%", fairValuePercent),
+                        modifier = Modifier.weight(1f),
+                        valueColor = if (fairValuePercent > 0) ProfitGreen else LossRed
+                    )
+                    Spacer(modifier = Modifier.weight(2f))
+                }
             }
             
             Spacer(modifier = Modifier.height(12.dp))
@@ -147,23 +182,6 @@ fun HoldingCard(
                 if (holding.sector.isNotEmpty()) {
                     SectorChip(sector = holding.sector)
                 }
-            }
-            
-            // Fair Value Indicator (using actual stock analysis)
-            if (stockAnalysis?.fairValue != null) {
-                Spacer(modifier = Modifier.height(8.dp))
-                FairValueIndicator(
-                    currentPrice = holding.currentPrice,
-                    fairValue = stockAnalysis!!.fairValue!!,
-                    recommendation = stockAnalysis!!.recommendation
-                )
-            } else if (holding.avgCost > 0) {
-                // Fallback to simple calculation if analysis not available
-                Spacer(modifier = Modifier.height(8.dp))
-                FairValueIndicator(
-                    currentPrice = holding.currentPrice,
-                    avgCost = holding.avgCost
-                )
             }
             
             // Notes if present
@@ -183,7 +201,8 @@ fun HoldingCard(
 private fun StatItem(
     label: String,
     value: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    valueColor: Color? = null
 ) {
     Column(
         modifier = modifier,
@@ -197,7 +216,8 @@ private fun StatItem(
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
+            color = valueColor ?: MaterialTheme.colorScheme.onSurface
         )
     }
 }
@@ -270,85 +290,27 @@ fun SectorChip(sector: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun FairValueIndicator(
-    currentPrice: Double,
-    fairValue: Double? = null,
-    avgCost: Double? = null,
-    recommendation: com.egx.portfoliotracker.data.model.Recommendation? = null
-) {
-    val (recommendationText, color, icon, fairValuePercent) = if (fairValue != null && recommendation != null) {
-        // Use actual fair value from analysis
-        val priceDiff = ((currentPrice - fairValue) / fairValue) * 100
-        val (text, col, ico) = when (recommendation) {
-            com.egx.portfoliotracker.data.model.Recommendation.STRONG_BUY -> Triple("STRONG BUY", ProfitGreen, Icons.Default.Star)
-            com.egx.portfoliotracker.data.model.Recommendation.BUY -> Triple("BUY", ProfitGreen.copy(alpha = 0.7f), Icons.Default.StarBorder)
-            com.egx.portfoliotracker.data.model.Recommendation.SELL -> Triple("SELL", LossRed.copy(alpha = 0.7f), Icons.Default.Info)
-            com.egx.portfoliotracker.data.model.Recommendation.STRONG_SELL -> Triple("STRONG SELL", LossRed, Icons.Default.Warning)
-            else -> Triple("FAIR VALUE", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Default.CheckCircle)
-        }
-        Quadruple(text, col, ico, priceDiff)
-    } else if (avgCost != null) {
-        // Fallback: simple calculation based on avg cost
-        val priceToCostRatio = currentPrice / avgCost
-        val (text, col, ico) = when {
-            priceToCostRatio < 0.85 -> Triple("STRONG BUY", ProfitGreen, Icons.Default.Star)
-            priceToCostRatio < 0.95 -> Triple("BUY", ProfitGreen.copy(alpha = 0.7f), Icons.Default.StarBorder)
-            priceToCostRatio > 1.15 -> Triple("OVERVALUED", LossRed, Icons.Default.Warning)
-            priceToCostRatio > 1.05 -> Triple("EXPENSIVE", LossRed.copy(alpha = 0.7f), Icons.Default.Info)
-            else -> Triple("FAIR VALUE", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Default.CheckCircle)
-        }
-        Quadruple(text, col, ico, (priceToCostRatio - 1.0) * 100)
-    } else {
-        Quadruple("N/A", MaterialTheme.colorScheme.onSurfaceVariant, Icons.Default.Info, 0.0)
+fun RecommendationChip(recommendation: com.egx.portfoliotracker.data.model.Recommendation, modifier: Modifier = Modifier) {
+    val (color, text) = when (recommendation) {
+        com.egx.portfoliotracker.data.model.Recommendation.STRONG_BUY -> ProfitGreen to "STRONG BUY"
+        com.egx.portfoliotracker.data.model.Recommendation.BUY -> ProfitGreen.copy(alpha = 0.8f) to "BUY"
+        com.egx.portfoliotracker.data.model.Recommendation.HOLD -> MaterialTheme.colorScheme.onSurfaceVariant to "HOLD"
+        com.egx.portfoliotracker.data.model.Recommendation.SELL -> LossRed.copy(alpha = 0.8f) to "SELL"
+        com.egx.portfoliotracker.data.model.Recommendation.STRONG_SELL -> LossRed to "STRONG SELL"
+        com.egx.portfoliotracker.data.model.Recommendation.NO_DATA -> MaterialTheme.colorScheme.outline to "NO DATA"
     }
     
     Surface(
+        modifier = modifier,
         color = color.copy(alpha = 0.15f),
-        shape = RoundedCornerShape(6.dp)
+        shape = RoundedCornerShape(4.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = color,
-                    modifier = Modifier.size(14.dp)
-                )
-                Text(
-                    text = recommendationText,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = color
-                )
-                if (abs(fairValuePercent) > 0.1) {
-                    Text(
-                        text = "${if (fairValuePercent < 0) "" else "+"}${String.format("%.1f", fairValuePercent)}%",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = color.copy(alpha = 0.8f)
-                    )
-                }
-            }
-            if (fairValue != null) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Fair Value: EGP ${String.format("%.2f", fairValue)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
-            }
-        }
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            color = color,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
-
-// Helper data class for quadruple
-private data class Quadruple<A, B, C, D>(
-    val first: A,
-    val second: B,
-    val third: C,
-    val fourth: D
-)

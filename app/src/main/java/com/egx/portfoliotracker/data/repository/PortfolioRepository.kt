@@ -1,12 +1,15 @@
 package com.egx.portfoliotracker.data.repository
 
+import android.content.Context
 import com.egx.portfoliotracker.data.local.CertificateDao
 import com.egx.portfoliotracker.data.local.CostHistoryDao
 import com.egx.portfoliotracker.data.local.DividendDao
 import com.egx.portfoliotracker.data.local.ExpenseDao
 import com.egx.portfoliotracker.data.local.HoldingDao
+import com.egx.portfoliotracker.data.local.PortfolioDatabase
 import com.egx.portfoliotracker.data.local.StockDao
 import com.egx.portfoliotracker.data.local.TransactionDao
+import com.egx.portfoliotracker.data.local.WatchlistDao
 import com.egx.portfoliotracker.data.model.*
 import com.egx.portfoliotracker.data.model.Certificate
 import com.egx.portfoliotracker.data.model.CertificateStatus
@@ -29,8 +32,69 @@ class PortfolioRepository @Inject constructor(
     private val dividendDao: DividendDao,
     private val certificateDao: CertificateDao,
     private val expenseDao: ExpenseDao,
-    private val stockPriceService: StockPriceService
+    private val watchlistDao: WatchlistDao,
+    private val stockPriceService: StockPriceService,
+    private val database: PortfolioDatabase,
+    private val context: Context
 ) {
+    
+    /**
+     * Emergency recovery: Force checkpoint WAL file to recover any uncommitted data
+     */
+    suspend fun attemptDataRecovery(): Boolean {
+        return try {
+            android.util.Log.e("DataRecovery", "=== RECOVERY STARTED ===")
+            
+            // AGGRESSIVE RECOVERY: Read data directly from database FIRST
+            val recovery = DataRecovery(database, context)
+            val result = recovery.recoverAllData()
+            
+            android.util.Log.e("DataRecovery", "Recovery found: ${result.holdings.size} holdings, ${result.certificates.size} certificates, ${result.expenses.size} expenses")
+            
+            // Restore recovered data
+            if (result.holdings.isNotEmpty()) {
+                holdingDao.insertHoldings(result.holdings)
+                android.util.Log.e("DataRecovery", "Restored ${result.holdings.size} holdings")
+            }
+            if (result.certificates.isNotEmpty()) {
+                certificateDao.insertCertificates(result.certificates)
+                android.util.Log.e("DataRecovery", "Restored ${result.certificates.size} certificates")
+            }
+            if (result.expenses.isNotEmpty()) {
+                result.expenses.forEach { expenseDao.insertExpense(it) }
+                android.util.Log.e("DataRecovery", "Restored ${result.expenses.size} expenses")
+            }
+            
+            val hasData = result.holdings.isNotEmpty() || result.certificates.isNotEmpty() || result.expenses.isNotEmpty()
+            android.util.Log.e("DataRecovery", "Recovery result: $hasData")
+            
+            // Also log current database state
+            val currentHoldings = holdingDao.getHoldingsCount().first()
+            val currentCerts = certificateDao.getCertificatesCount(CertificateStatus.ACTIVE).first()
+            android.util.Log.e("DataRecovery", "After recovery - Holdings in DB: $currentHoldings, Certificates: $currentCerts")
+            hasData
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+    
+    /**
+     * Get raw database counts for debugging
+     */
+    suspend fun getDatabaseCounts(): Map<String, Int> {
+        return try {
+            mapOf(
+                "holdings" to (holdingDao.getHoldingsCount().first() ?: 0),
+                "certificates" to (certificateDao.getCertificatesCount(CertificateStatus.ACTIVE).first() ?: 0),
+                "expenses" to expenseDao.getAllExpenses().first().size,
+                "transactions" to transactionDao.getAllTransactions().first().size,
+                "dividends" to dividendDao.getAllDividends().first().size
+            )
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
     // Holdings
     fun getAllHoldings(): Flow<List<Holding>> = holdingDao.getAllHoldings()
     
@@ -398,12 +462,11 @@ class PortfolioRepository @Inject constructor(
     fun getAllSectors(): Flow<List<String>> = stockDao.getAllSectors()
     
     suspend fun initializeStocks() {
-        // Force update all stocks - OnConflictStrategy.REPLACE will update existing rows by symbol
-        // This ensures database has correct names from current Stock.kt
+        // Iterate through each stock and insert/update individually to ensure names are updated
         for (stock in EGXStocks.stocks) {
-            stockDao.insertStock(stock)
+            stockDao.insertStock(stock) // Uses OnConflictStrategy.REPLACE to update existing entries
         }
-        // Sync stock names in existing holdings AFTER stocks are updated
+        // Sync stock names in existing holdings
         syncStockNames()
     }
     
@@ -708,5 +771,178 @@ class PortfolioRepository @Inject constructor(
     
     suspend fun deleteExpenseById(id: String) {
         expenseDao.deleteExpenseById(id)
+    }
+    
+    // ========== WATCHLIST ==========
+    
+    fun getAllWatchlistItems() = watchlistDao.getAllWatchlistItems()
+    
+    suspend fun getWatchlistItemById(id: String) = watchlistDao.getWatchlistItemById(id)
+    
+    suspend fun getWatchlistItemBySymbol(symbol: String) = watchlistDao.getWatchlistItemBySymbol(symbol)
+    
+    suspend fun addWatchlistItem(watchlist: Watchlist) {
+        watchlistDao.insertWatchlistItem(watchlist)
+    }
+    
+    suspend fun updateWatchlistItem(watchlist: Watchlist) {
+        watchlistDao.updateWatchlistItem(watchlist)
+    }
+    
+    suspend fun deleteWatchlistItem(watchlist: Watchlist) {
+        watchlistDao.deleteWatchlistItem(watchlist)
+    }
+    
+    suspend fun deleteWatchlistItemById(id: String) {
+        watchlistDao.deleteWatchlistItemById(id)
+    }
+    
+    // ========== BACKUP/RESTORE ==========
+    
+    suspend fun exportData(uri: android.net.Uri, callback: (Boolean, String) -> Unit) {
+        try {
+            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                val holdings = getAllHoldings().first()
+                val certificates = getAllCertificates().first()
+                val expenses = getAllExpenses().first()
+                val transactions = transactionDao.getAllTransactions().first()
+                val dividends = dividendDao.getAllDividends().first()
+                val costHistory = costHistoryDao.getRecentHistory(10000).first() // Get all cost history
+                val watchlist = getAllWatchlistItems().first()
+                
+                val backupData = BackupData(
+                    holdings = holdings,
+                    certificates = certificates,
+                    expenses = expenses,
+                    transactions = transactions,
+                    dividends = dividends,
+                    costHistory = costHistory,
+                    watchlist = watchlist
+                )
+                
+                val json = com.google.gson.Gson().toJson(backupData)
+                outputStream.write(json.toByteArray())
+                callback(true, "Data exported successfully")
+            } ?: callback(false, "Failed to open output stream")
+        } catch (e: Exception) {
+            callback(false, e.message ?: "Unknown error")
+        }
+    }
+    
+    suspend fun importData(uri: android.net.Uri, callback: (Boolean, String) -> Unit) {
+        try {
+            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                val json = inputStream.bufferedReader().use { it.readText() }
+                val backupData = com.google.gson.Gson().fromJson(json, BackupData::class.java)
+                
+                // Import all data
+                backupData.holdings.forEach { holdingDao.insertHolding(it) }
+                backupData.certificates.forEach { certificateDao.insertCertificate(it) }
+                backupData.expenses.forEach { expenseDao.insertExpense(it) }
+                backupData.transactions.forEach { transactionDao.insertTransaction(it) }
+                backupData.dividends.forEach { dividendDao.insertDividend(it) }
+                backupData.costHistory.forEach { costHistoryDao.insertHistory(it) }
+                backupData.watchlist.forEach { watchlistDao.insertWatchlistItem(it) }
+                
+                callback(true, "Data imported successfully")
+            } ?: callback(false, "Failed to open input stream")
+        } catch (e: Exception) {
+            callback(false, e.message ?: "Unknown error")
+        }
+    }
+    
+    // ========== REALIZED GAINS ==========
+    
+    suspend fun getRealizedGains(): List<com.egx.portfoliotracker.data.model.RealizedGain> {
+        val transactions = transactionDao.getAllTransactions().first()
+        val holdings = getAllHoldings().first()
+        
+        val sellTransactions = transactions.filter { it.type == TransactionType.SELL }
+        
+        return sellTransactions.mapNotNull { sell ->
+            val holding = holdings.find { it.id == sell.holdingId } ?: return@mapNotNull null
+            val avgCost = holding.avgCost
+            val profitLoss = (sell.price - avgCost) * sell.shares
+            val profitLossPercent = if (avgCost > 0) ((sell.price - avgCost) / avgCost) * 100 else 0.0
+            
+            com.egx.portfoliotracker.data.model.RealizedGain(
+                stockSymbol = holding.stockSymbol,
+                sharesSold = sell.shares,
+                sellPrice = sell.price,
+                avgCost = avgCost,
+                profitLoss = profitLoss,
+                profitLossPercent = profitLossPercent,
+                sellDate = sell.timestamp
+            )
+        }
+    }
+    
+    // ========== STOCK ANALYSIS ==========
+    
+    suspend fun getStockAnalyses(): List<StockAnalysis> {
+        val holdings = getAllHoldings().first()
+        
+        return holdings.map { holding ->
+            // Use effective fair value (user-defined or calculated from EPS)
+            // Fair Value calculation: Benjamin Graham's formula = EPS × (8.5 + 2g)
+            val fairValue = holding.effectiveFairValue
+            
+            if (fairValue == null || fairValue <= 0) {
+                // No fair value available - need EPS data or user input
+                StockAnalysis(
+                    stockSymbol = holding.stockSymbol,
+                    currentPrice = holding.currentPrice,
+                    fairValue = null,
+                    upsidePercent = null,
+                    marginOfSafety = null,
+                    recommendation = Recommendation.NO_DATA,
+                    eps = holding.eps,
+                    growthRate = holding.growthRate,
+                    peRatio = holding.peRatio
+                )
+            } else {
+                // Calculate upside potential: how much the stock could gain to reach fair value
+                val upsidePercent = ((fairValue / holding.currentPrice) - 1) * 100
+                
+                // Margin of safety: how much below fair value the current price is
+                val marginOfSafety = ((fairValue - holding.currentPrice) / fairValue) * 100
+                
+                // Current P/E ratio if EPS available
+                val currentPE = if (holding.eps != null && holding.eps > 0) {
+                    holding.currentPrice / holding.eps
+                } else holding.peRatio
+                
+                // Recommendation based on margin of safety (value investing principles)
+                // Positive margin = price below fair value (good)
+                // Negative margin = price above fair value (overvalued)
+                val recommendation = when {
+                    marginOfSafety >= 30 -> Recommendation.STRONG_BUY  // 30%+ below fair value
+                    marginOfSafety >= 10 -> Recommendation.BUY         // 10-30% below fair value
+                    marginOfSafety >= -10 -> Recommendation.HOLD       // Within 10% of fair value
+                    marginOfSafety >= -30 -> Recommendation.SELL       // 10-30% above fair value
+                    else -> Recommendation.STRONG_SELL                  // 30%+ above fair value
+                }
+                
+                StockAnalysis(
+                    stockSymbol = holding.stockSymbol,
+                    currentPrice = holding.currentPrice,
+                    fairValue = fairValue,
+                    upsidePercent = upsidePercent,
+                    marginOfSafety = marginOfSafety,
+                    recommendation = recommendation,
+                    eps = holding.eps,
+                    growthRate = holding.growthRate,
+                    peRatio = currentPE
+                )
+            }
+        }
+    }
+    
+    // ========== PORTFOLIO SNAPSHOTS ==========
+    
+    fun getPortfolioSnapshots(): Flow<List<PortfolioSnapshot>> {
+        // This should be populated by taking snapshots periodically
+        // For now, return empty list - can be enhanced
+        return kotlinx.coroutines.flow.flowOf(emptyList())
     }
 }

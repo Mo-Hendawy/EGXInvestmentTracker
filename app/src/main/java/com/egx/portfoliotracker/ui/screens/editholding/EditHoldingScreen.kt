@@ -6,19 +6,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.egx.portfoliotracker.data.model.Holding
-import com.egx.portfoliotracker.data.model.HoldingRole
-import com.egx.portfoliotracker.data.model.HoldingStatus
-import com.egx.portfoliotracker.ui.theme.*
+import com.egx.portfoliotracker.data.model.*
 import com.egx.portfoliotracker.viewmodel.PortfolioViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,7 +26,6 @@ fun EditHoldingScreen(
 ) {
     val holdings by viewModel.holdings.collectAsState()
     val holding = holdings.find { it.id == holdingId }
-    val uiState by viewModel.uiState.collectAsState()
     
     if (holding == null) {
         Box(
@@ -42,31 +37,24 @@ fun EditHoldingScreen(
         return
     }
     
-    var shares by remember { mutableStateOf(holding.shares.toString()) }
-    var avgCost by remember { mutableStateOf(holding.avgCost.toString()) }
-    var currentPrice by remember { mutableStateOf(holding.currentPrice.toString()) }
-    var selectedRole by remember { mutableStateOf(holding.role) }
-    var selectedStatus by remember { mutableStateOf(holding.status) }
-    var notes by remember { mutableStateOf(holding.notes) }
-    
-    var roleExpanded by remember { mutableStateOf(false) }
-    var statusExpanded by remember { mutableStateOf(false) }
-    
-    // Handle success
-    LaunchedEffect(uiState.showAddSuccess) {
-        if (uiState.showAddSuccess) {
-            viewModel.dismissAddSuccess()
-            onNavigateBack()
-        }
-    }
+    var sharesText by remember { mutableStateOf(holding.shares.toString()) }
+    var avgCostText by remember { mutableStateOf(holding.avgCost.toString()) }
+    var currentPriceText by remember { mutableStateOf(holding.currentPrice.toString()) }
+    var role by remember { mutableStateOf(holding.role) }
+    var status by remember { mutableStateOf(holding.status) }
+    var notesText by remember { mutableStateOf(holding.notes) }
+    var targetPercentageText by remember { mutableStateOf(holding.targetPercentage?.toString() ?: "") }
+    var fairValueText by remember { mutableStateOf(holding.fairValue?.toString() ?: "") }
+    var epsText by remember { mutableStateOf(holding.eps?.toString() ?: "") }
+    var growthRateText by remember { mutableStateOf(holding.growthRate?.toString() ?: "") }
     
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Edit Stock") },
+                title = { Text("Edit ${holding.stockSymbol}") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.Default.Close, contentDescription = "Close")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 }
             )
@@ -80,121 +68,41 @@ fun EditHoldingScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Stock Info Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text(
-                        text = holding.stockSymbol,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = holding.stockNameEn,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Text(
-                        text = holding.sector,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                    )
-                }
-            }
-            
-            // Shares input
             OutlinedTextField(
-                value = shares,
-                onValueChange = { newValue ->
-                    val filtered = newValue.filter { it.isDigit() }
-                    shares = filtered
-                },
-                label = { Text("Number of Shares") },
-                modifier = Modifier.fillMaxWidth(),
+                value = sharesText,
+                onValueChange = { sharesText = it },
+                label = { Text("Shares") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                leadingIcon = { Icon(Icons.Default.Numbers, contentDescription = null) },
-                singleLine = true
+                modifier = Modifier.fillMaxWidth()
             )
             
-            // Average Cost input
             OutlinedTextField(
-                value = avgCost,
-                onValueChange = { newValue ->
-                    val filtered = if (newValue.isEmpty()) {
-                        ""
-                    } else {
-                        val parts = newValue.split('.')
-                        when {
-                            parts.size == 1 -> parts[0].filter { it.isDigit() }
-                            parts.size == 2 -> {
-                                val beforeDecimal = parts[0].filter { it.isDigit() }
-                                val afterDecimal = parts[1].filter { it.isDigit() }
-                                if (beforeDecimal.isEmpty() && afterDecimal.isEmpty()) {
-                                    ""
-                                } else {
-                                    "$beforeDecimal.$afterDecimal"
-                                }
-                            }
-                            else -> avgCost
-                        }
-                    }
-                    avgCost = filtered
-                },
-                label = { Text("Average Cost (EGP)") },
-                modifier = Modifier.fillMaxWidth(),
+                value = avgCostText,
+                onValueChange = { avgCostText = it },
+                label = { Text("Average Cost") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                leadingIcon = { Icon(Icons.Default.AttachMoney, contentDescription = null) },
-                singleLine = true
+                modifier = Modifier.fillMaxWidth()
             )
             
-            // Current Price input
             OutlinedTextField(
-                value = currentPrice,
-                onValueChange = { newValue ->
-                    val filtered = if (newValue.isEmpty()) {
-                        ""
-                    } else {
-                        val parts = newValue.split('.')
-                        when {
-                            parts.size == 1 -> parts[0].filter { it.isDigit() }
-                            parts.size == 2 -> {
-                                val beforeDecimal = parts[0].filter { it.isDigit() }
-                                val afterDecimal = parts[1].filter { it.isDigit() }
-                                if (beforeDecimal.isEmpty() && afterDecimal.isEmpty()) {
-                                    ""
-                                } else {
-                                    "$beforeDecimal.$afterDecimal"
-                                }
-                            }
-                            else -> currentPrice
-                        }
-                    }
-                    currentPrice = filtered
-                },
-                label = { Text("Current Price (EGP)") },
-                modifier = Modifier.fillMaxWidth(),
+                value = currentPriceText,
+                onValueChange = { currentPriceText = it },
+                label = { Text("Current Price") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                leadingIcon = { Icon(Icons.Default.TrendingUp, contentDescription = null) },
-                singleLine = true
+                modifier = Modifier.fillMaxWidth()
             )
             
-            // Role Dropdown
+            // Role dropdown
+            var roleExpanded by remember { mutableStateOf(false) }
             ExposedDropdownMenuBox(
                 expanded = roleExpanded,
-                onExpandedChange = { roleExpanded = it }
+                onExpandedChange = { roleExpanded = !roleExpanded }
             ) {
                 OutlinedTextField(
-                    value = selectedRole.displayName,
+                    value = role.displayName,
                     onValueChange = {},
-                    readOnly = true,
                     label = { Text("Role") },
+                    readOnly = true,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = roleExpanded) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -204,20 +112,11 @@ fun EditHoldingScreen(
                     expanded = roleExpanded,
                     onDismissRequest = { roleExpanded = false }
                 ) {
-                    HoldingRole.entries.forEach { role ->
+                    HoldingRole.values().forEach { r ->
                         DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(role.displayName, fontWeight = FontWeight.Bold)
-                                    Text(
-                                        role.description,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            },
+                            text = { Text(r.displayName) },
                             onClick = {
-                                selectedRole = role
+                                role = r
                                 roleExpanded = false
                             }
                         )
@@ -225,16 +124,17 @@ fun EditHoldingScreen(
                 }
             }
             
-            // Status Dropdown
+            // Status dropdown
+            var statusExpanded by remember { mutableStateOf(false) }
             ExposedDropdownMenuBox(
                 expanded = statusExpanded,
-                onExpandedChange = { statusExpanded = it }
+                onExpandedChange = { statusExpanded = !statusExpanded }
             ) {
                 OutlinedTextField(
-                    value = selectedStatus.displayName,
+                    value = status.displayName,
                     onValueChange = {},
-                    readOnly = true,
                     label = { Text("Status") },
+                    readOnly = true,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = statusExpanded) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -244,11 +144,11 @@ fun EditHoldingScreen(
                     expanded = statusExpanded,
                     onDismissRequest = { statusExpanded = false }
                 ) {
-                    HoldingStatus.entries.forEach { status ->
+                    HoldingStatus.values().forEach { s ->
                         DropdownMenuItem(
-                            text = { Text(status.displayName) },
+                            text = { Text(s.displayName) },
                             onClick = {
-                                selectedStatus = status
+                                status = s
                                 statusExpanded = false
                             }
                         )
@@ -256,45 +156,134 @@ fun EditHoldingScreen(
                 }
             }
             
-            // Notes
             OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Notes (optional)") },
+                value = notesText,
+                onValueChange = { notesText = it },
+                label = { Text("Notes") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(100.dp),
-                maxLines = 3
+                    .height(120.dp),
+                maxLines = 4
+            )
+            
+            Divider(modifier = Modifier.padding(vertical = 8.dp))
+            
+            Text(
+                "Target Allocation",
+                style = MaterialTheme.typography.titleMedium
+            )
+            
+            OutlinedTextField(
+                value = targetPercentageText,
+                onValueChange = { targetPercentageText = it },
+                label = { Text("Target Allocation (%)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                supportingText = { Text("Target portfolio weight 0-100%") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            Divider(modifier = Modifier.padding(vertical = 8.dp))
+            
+            Text(
+                "Valuation Analysis",
+                style = MaterialTheme.typography.titleMedium
+            )
+            
+            Text(
+                "Enter EPS and Growth Rate to auto-calculate fair value using Graham's formula",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = epsText,
+                    onValueChange = { epsText = it },
+                    label = { Text("EPS") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    supportingText = { Text("Earnings/Share") },
+                    modifier = Modifier.weight(1f)
+                )
+                
+                OutlinedTextField(
+                    value = growthRateText,
+                    onValueChange = { growthRateText = it },
+                    label = { Text("Growth %") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    supportingText = { Text("Expected growth") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            
+            // Show calculated fair value preview
+            val epsVal = epsText.toDoubleOrNull()
+            val growthVal = growthRateText.toDoubleOrNull() ?: 5.0
+            if (epsVal != null && epsVal > 0) {
+                val calculatedFV = epsVal * (8.5 + 2 * growthVal)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            "Calculated Fair Value (Graham's Formula)",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Text(
+                            "EPS × (8.5 + 2 × Growth) = ${String.format("%.2f", epsVal)} × (8.5 + 2 × ${String.format("%.1f", growthVal)}) = ${String.format("%.2f", calculatedFV)} EGP",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+            
+            OutlinedTextField(
+                value = fairValueText,
+                onValueChange = { fairValueText = it },
+                label = { Text("Fair Value Override (optional)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                supportingText = { Text("Override calculated value if you have your own estimate") },
+                modifier = Modifier.fillMaxWidth()
             )
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Save Button
             Button(
                 onClick = {
+                    val shares = sharesText.toIntOrNull() ?: return@Button
+                    val avgCost = avgCostText.toDoubleOrNull() ?: return@Button
+                    val currentPrice = currentPriceText.toDoubleOrNull() ?: return@Button
+                    
+                    val targetPercentage = targetPercentageText.toDoubleOrNull()?.takeIf { it >= 0 && it <= 100 }
+                    val fairValue = fairValueText.toDoubleOrNull()?.takeIf { it > 0 }
+                    val eps = epsText.toDoubleOrNull()?.takeIf { it > 0 }
+                    val growthRate = growthRateText.toDoubleOrNull()
+                    
                     val updatedHolding = holding.copy(
-                        shares = shares.toIntOrNull() ?: holding.shares,
-                        avgCost = avgCost.toDoubleOrNull() ?: holding.avgCost,
-                        currentPrice = currentPrice.toDoubleOrNull() ?: holding.currentPrice,
-                        role = selectedRole,
-                        status = selectedStatus,
-                        notes = notes,
-                        updatedAt = System.currentTimeMillis()
+                        shares = shares,
+                        avgCost = avgCost,
+                        currentPrice = currentPrice,
+                        role = role,
+                        status = status,
+                        notes = notesText,
+                        targetPercentage = targetPercentage,
+                        fairValue = fairValue,
+                        eps = eps,
+                        growthRate = growthRate
                     )
                     viewModel.updateHolding(updatedHolding)
                     onNavigateBack()
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                enabled = shares.toIntOrNull() != null && shares.toInt() > 0 &&
-                    avgCost.toDoubleOrNull() != null && avgCost.toDouble() > 0 &&
-                    currentPrice.toDoubleOrNull() != null && currentPrice.toDouble() > 0
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.Save, contentDescription = null)
-                Spacer(modifier = Modifier.width(8.dp))
                 Text("Save Changes")
             }
         }
     }
 }
+

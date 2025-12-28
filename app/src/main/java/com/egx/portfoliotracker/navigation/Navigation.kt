@@ -23,7 +23,14 @@ import com.egx.portfoliotracker.ui.screens.expenses.CategoryManagementScreen
 import com.egx.portfoliotracker.ui.screens.expenses.ExpensesScreen
 import com.egx.portfoliotracker.ui.screens.portfolio.PortfolioScreen
 import com.egx.portfoliotracker.ui.screens.stockdetail.StockDetailScreen
+import com.egx.portfoliotracker.ui.screens.performance.PerformanceChartsScreen
+import com.egx.portfoliotracker.ui.screens.watchlist.WatchlistScreen
+import com.egx.portfoliotracker.ui.screens.watchlist.AddEditWatchlistScreen
+import com.egx.portfoliotracker.ui.screens.backup.BackupRestoreScreen
+import com.egx.portfoliotracker.ui.screens.realizedgains.RealizedGainsScreen
 import com.egx.portfoliotracker.ui.screens.editholding.EditHoldingScreen
+import com.egx.portfoliotracker.ui.screens.stockanalysis.StockAnalysisScreen
+import com.egx.portfoliotracker.ui.screens.dividendcalendar.DividendCalendarScreen
 
 sealed class Screen(val route: String) {
     object Dashboard : Screen("dashboard")
@@ -44,12 +51,21 @@ sealed class Screen(val route: String) {
     object StockDetail : Screen("stock_detail/{holdingId}") {
         fun createRoute(holdingId: String) = "stock_detail/$holdingId"
     }
-    object EditHolding : Screen("edit_holding/{holdingId}") {
-        fun createRoute(holdingId: String) = "edit_holding/$holdingId"
-    }
     object CertificateDetail : Screen("certificate_detail/{certificateId}") {
         fun createRoute(certificateId: String) = "certificate_detail/$certificateId"
     }
+    object PerformanceCharts : Screen("performance_charts")
+    object Watchlist : Screen("watchlist")
+    object AddEditWatchlist : Screen("add_edit_watchlist/{watchlistId}") {
+        fun createRoute(watchlistId: String?) = if (watchlistId != null) "add_edit_watchlist/$watchlistId" else "add_edit_watchlist/new"
+    }
+    object BackupRestore : Screen("backup_restore")
+    object RealizedGains : Screen("realized_gains")
+    object EditHolding : Screen("edit_holding/{holdingId}") {
+        fun createRoute(holdingId: String) = "edit_holding/$holdingId"
+    }
+    object StockAnalysis : Screen("stock_analysis")
+    object DividendCalendar : Screen("dividend_calendar")
 }
 
 @Composable
@@ -140,6 +156,27 @@ fun AppNavigation(
                 },
                 onNavigateToStockDetail = { holdingId ->
                     navController.navigate(Screen.StockDetail.createRoute(holdingId))
+                },
+                onNavigateToPerformanceCharts = {
+                    navController.navigate(Screen.PerformanceCharts.route)
+                },
+                onNavigateToWatchlist = {
+                    navController.navigate(Screen.Watchlist.route)
+                },
+                onNavigateToBackupRestore = {
+                    navController.navigate(Screen.BackupRestore.route)
+                },
+                onNavigateToRealizedGains = {
+                    navController.navigate(Screen.RealizedGains.route)
+                },
+                onNavigateToStockAnalysis = {
+                    navController.navigate(Screen.StockAnalysis.route)
+                },
+                onNavigateToDividendCalendar = {
+                    navController.navigate(Screen.DividendCalendar.route)
+                },
+                onNavigateToEditHolding = { holdingId ->
+                    navController.navigate(Screen.EditHolding.createRoute(holdingId))
                 }
             )
         }
@@ -154,6 +191,27 @@ fun AppNavigation(
                 },
                 onNavigateToStockDetail = { holdingId ->
                     navController.navigate(Screen.StockDetail.createRoute(holdingId))
+                },
+                onNavigateToEditHolding = { holdingId ->
+                    navController.navigate(Screen.EditHolding.createRoute(holdingId))
+                },
+                onNavigateToPerformanceCharts = {
+                    navController.navigate(Screen.PerformanceCharts.route)
+                },
+                onNavigateToWatchlist = {
+                    navController.navigate(Screen.Watchlist.route)
+                },
+                onNavigateToBackupRestore = {
+                    navController.navigate(Screen.BackupRestore.route)
+                },
+                onNavigateToRealizedGains = {
+                    navController.navigate(Screen.RealizedGains.route)
+                },
+                onNavigateToStockAnalysis = {
+                    navController.navigate(Screen.StockAnalysis.route)
+                },
+                onNavigateToDividendCalendar = {
+                    navController.navigate(Screen.DividendCalendar.route)
                 }
             )
         }
@@ -183,21 +241,9 @@ fun AppNavigation(
                 },
                 onNavigateToEdit = { editHoldingId ->
                     navController.navigate(Screen.EditHolding.createRoute(editHoldingId))
-                }
-            )
-        }
-        
-        composable(
-            route = Screen.EditHolding.route,
-            arguments = listOf(
-                navArgument("holdingId") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-            val holdingId = backStackEntry.arguments?.getString("holdingId") ?: return@composable
-            EditHoldingScreen(
-                holdingId = holdingId,
-                onNavigateBack = {
-                    navController.popBackStack()
+                },
+                onNavigateToStockAnalysis = {
+                    navController.navigate(Screen.StockAnalysis.route)
                 }
             )
         }
@@ -317,6 +363,71 @@ fun AppNavigation(
                 onNavigateBack = {
                     navController.popBackStack()
                 }
+            )
+        }
+        
+        composable(Screen.PerformanceCharts.route) {
+            PerformanceChartsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
+        composable(Screen.Watchlist.route) {
+            WatchlistScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToAddEdit = { watchlistId ->
+                    navController.navigate(Screen.AddEditWatchlist.createRoute(watchlistId))
+                }
+            )
+        }
+        
+        composable(
+            route = Screen.AddEditWatchlist.route,
+            arguments = listOf(
+                navArgument("watchlistId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val watchlistId = backStackEntry.arguments?.getString("watchlistId")
+            AddEditWatchlistScreen(
+                watchlistId = if (watchlistId == "new") null else watchlistId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
+        composable(Screen.BackupRestore.route) {
+            BackupRestoreScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
+        composable(Screen.RealizedGains.route) {
+            RealizedGainsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
+        composable(
+            route = Screen.EditHolding.route,
+            arguments = listOf(
+                navArgument("holdingId") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val holdingId = backStackEntry.arguments?.getString("holdingId") ?: return@composable
+            EditHoldingScreen(
+                holdingId = holdingId,
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
+        composable(Screen.StockAnalysis.route) {
+            StockAnalysisScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        
+        composable(Screen.DividendCalendar.route) {
+            DividendCalendarScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
         }

@@ -1,9 +1,12 @@
 package com.egx.portfoliotracker.ui.screens.dashboard
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -11,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.egx.portfoliotracker.data.model.Holding
@@ -19,6 +23,7 @@ import com.egx.portfoliotracker.data.model.TimePeriod
 import com.egx.portfoliotracker.ui.components.*
 import com.egx.portfoliotracker.ui.theme.*
 import com.egx.portfoliotracker.viewmodel.PortfolioViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,14 +31,30 @@ fun DashboardScreen(
     onNavigateToPortfolio: () -> Unit,
     onNavigateToAddStock: () -> Unit,
     onNavigateToStockDetail: (String) -> Unit,
+    onNavigateToPerformanceCharts: () -> Unit = {},
+    onNavigateToWatchlist: () -> Unit = {},
+    onNavigateToBackupRestore: () -> Unit = {},
+    onNavigateToRealizedGains: () -> Unit = {},
+    onNavigateToStockAnalysis: () -> Unit = {},
+    onNavigateToDividendCalendar: () -> Unit = {},
+    onNavigateToEditHolding: (String) -> Unit = {},
     viewModel: PortfolioViewModel = hiltViewModel()
 ) {
+    var showMenu by remember { mutableStateOf(false) }
     val holdings by viewModel.holdings.collectAsState()
     val summary by viewModel.portfolioSummary.collectAsState()
     val stockAllocation by viewModel.stockAllocation.collectAsState()
     val periodPerformances by viewModel.periodPerformances.collectAsState()
+    val stockAnalyses by viewModel.stockAnalyses.collectAsState()
+    val realizedGains by viewModel.realizedGains.collectAsState()
+    val allDividends by viewModel.allDividends.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
-    val isAmountsBlurred by viewModel.isAmountsBlurred.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Calculate totals for realized gains card
+    val totalRealizedGains = realizedGains.sumOf { it.profitLoss }
+    val totalDividends = allDividends.sumOf { it.totalAmount }
+    val totalReturns = totalRealizedGains + totalDividends
     
     val snackbarHostState = remember { SnackbarHostState() }
     
@@ -44,9 +65,78 @@ fun DashboardScreen(
         }
     }
     
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    
+    LaunchedEffect(showMenu) {
+        if (showMenu) {
+            drawerState.open()
+        } else {
+            drawerState.close()
+        }
+    }
+    
+    LaunchedEffect(drawerState.isOpen) {
+        if (!drawerState.isOpen) {
+            showMenu = false
+        }
+    }
+    
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            NavigationDrawer(
+                onDismiss = { 
+                    showMenu = false
+                    coroutineScope.launch { drawerState.close() }
+                },
+                onNavigateToPerformanceCharts = { 
+                    coroutineScope.launch {
+                        drawerState.close()
+                        showMenu = false
+                    }
+                    onNavigateToPerformanceCharts() 
+                },
+                onNavigateToWatchlist = { 
+                    coroutineScope.launch {
+                        drawerState.close()
+                        showMenu = false
+                    }
+                    onNavigateToWatchlist() 
+                },
+                onNavigateToBackupRestore = { 
+                    coroutineScope.launch {
+                        drawerState.close()
+                        showMenu = false
+                    }
+                    onNavigateToBackupRestore() 
+                },
+                onNavigateToRealizedGains = { 
+                    coroutineScope.launch {
+                        drawerState.close()
+                        showMenu = false
+                    }
+                    onNavigateToRealizedGains() 
+                },
+                onNavigateToStockAnalysis = { 
+                    coroutineScope.launch {
+                        drawerState.close()
+                        showMenu = false
+                    }
+                    onNavigateToStockAnalysis() 
+                },
+                onNavigateToDividendCalendar = { 
+                    coroutineScope.launch {
+                        drawerState.close()
+                        showMenu = false
+                    }
+                    onNavigateToDividendCalendar() 
+                }
+            )
+        }
+    ) {
+        Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            topBar = {
             TopAppBar(
                 title = {
                     Column {
@@ -62,18 +152,73 @@ fun DashboardScreen(
                         )
                     }
                 },
+                navigationIcon = {
+                    IconButton(onClick = { 
+                        showMenu = true
+                        coroutineScope.launch { drawerState.open() }
+                    }) {
+                        Icon(Icons.Default.Menu, contentDescription = "Menu")
+                    }
+                },
                 actions = {
-                    // Privacy/Blur toggle
+                    // Recovery button with diagnostic
+                    var showRecoveryDialog by remember { mutableStateOf(false) }
                     IconButton(
-                        onClick = { viewModel.toggleAmountsBlur() }
+                        onClick = { 
+                            showRecoveryDialog = true
+                        }
                     ) {
-                        Icon(
-                            imageVector = if (isAmountsBlurred) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                            contentDescription = if (isAmountsBlurred) "Show amounts" else "Hide amounts",
-                            tint = if (isAmountsBlurred) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        Icon(Icons.Default.Restore, contentDescription = "Recover Data")
+                    }
+                    
+                    if (showRecoveryDialog) {
+                        var recoveryStatus by remember { mutableStateOf("Checking...") }
+                        var showInitButton by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) {
+                            val counts = viewModel.getDatabaseCounts()
+                            recoveryStatus = "Before: Holdings: ${counts["holdings"]}, Certificates: ${counts["certificates"]}, Expenses: ${counts["expenses"]}"
+                            viewModel.attemptDataRecovery()
+                            val newCounts = viewModel.getDatabaseCounts()
+                            recoveryStatus = "After recovery: Holdings: ${newCounts["holdings"]}, Certificates: ${newCounts["certificates"]}, Expenses: ${newCounts["expenses"]}"
+                            showInitButton = newCounts["holdings"] == 0 && newCounts["certificates"] == 0
+                        }
+                        
+                        AlertDialog(
+                            onDismissRequest = { showRecoveryDialog = false },
+                            title = { Text("Data Recovery Status") },
+                            text = { 
+                                Column {
+                                    Text(recoveryStatus)
+                                    if (showInitButton) {
+                                        Spacer(Modifier.height(8.dp))
+                                        Text("No data found. Would you like to initialize from notebook?", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                if (showInitButton) {
+                                    TextButton(onClick = { 
+                                        viewModel.initializeHoldingsFromNotebook()
+                                        viewModel.initializeCertificatesFromNotebook()
+                                        showRecoveryDialog = false
+                                    }) {
+                                        Text("Initialize Data")
+                                    }
+                                } else {
+                                    TextButton(onClick = { showRecoveryDialog = false }) {
+                                        Text("OK")
+                                    }
+                                }
+                            },
+                            dismissButton = {
+                                if (showInitButton) {
+                                    TextButton(onClick = { showRecoveryDialog = false }) {
+                                        Text("Cancel")
+                                    }
+                                }
+                            }
                         )
                     }
-                    // Refresh button
                     IconButton(
                         onClick = { viewModel.refreshAllPrices() },
                         enabled = !uiState.isRefreshing
@@ -168,24 +313,25 @@ fun DashboardScreen(
                                 
                                 Spacer(modifier = Modifier.height(16.dp))
                                 
-                                // Donut chart with total in center - ABOVE the legend
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
+                                    // Donut chart with total in center - full width, centered
                                     PortfolioDonutChart(
                                         stockAllocations = stockAllocation,
                                         totalValue = portfolioSummary.totalValue,
-                                        isBlurred = isAmountsBlurred,
-                                        modifier = Modifier.size(200.dp)
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(200.dp)
                                     )
                                     
                                     Spacer(modifier = Modifier.height(16.dp))
                                     
-                                    // Legend below the chart
+                                    // Legend below
                                     StockAllocationLegend(
                                         allocations = stockAllocation.take(10),
-                                        isBlurred = isAmountsBlurred,
+                                        targetPercentages = holdings.associate { it.stockSymbol to it.targetPercentage },
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
@@ -195,15 +341,93 @@ fun DashboardScreen(
                     
                     // Portfolio Value Card
                     item {
-                        PortfolioValueCard(
-                            summary = portfolioSummary,
-                            isBlurred = isAmountsBlurred
-                        )
+                        PortfolioValueCard(summary = portfolioSummary)
                     }
                     
                     // Quick Stats
                     item {
                         QuickStatsRow(summary = portfolioSummary)
+                    }
+                    
+                    // Realized Gains + Dividends Card
+                    if (totalRealizedGains != 0.0 || totalDividends > 0.0) {
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onNavigateToRealizedGains() },
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (totalReturns >= 0) ProfitGreen.copy(alpha = 0.1f) else LossRed.copy(alpha = 0.1f)
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp)
+                                ) {
+                                    Text(
+                                        text = "Realized Returns",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "Realized Gains",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = String.format("%+,.0f EGP", totalRealizedGains),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (totalRealizedGains >= 0) ProfitGreen else LossRed
+                                            )
+                                        }
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(
+                                                text = "Dividends",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = String.format("+%,.0f EGP", totalDividends),
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = ProfitGreen
+                                            )
+                                        }
+                                    }
+                                    
+                                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                                    
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Total Realized",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = String.format("%+,.0f EGP", totalReturns),
+                                            style = MaterialTheme.typography.titleLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (totalReturns >= 0) ProfitGreen else LossRed
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                     
                     // Period Performance Cards
@@ -375,11 +599,12 @@ fun DashboardScreen(
                 }
                 
                 items(holdings) { holding ->
+                    val analysis = stockAnalyses.find { it.stockSymbol == holding.stockSymbol }
                     HoldingCard(
                         holding = holding,
-                        onClick = { onNavigateToStockDetail(holding.id) },
-                        isBlurred = isAmountsBlurred,
-                        totalPortfolioValue = summary?.totalValue ?: 0.0
+                        recommendation = analysis?.recommendation,
+                        fairValue = analysis?.fairValue,
+                        onClick = { onNavigateToStockDetail(holding.id) }
                     )
                 }
                 
@@ -388,6 +613,7 @@ fun DashboardScreen(
                     Spacer(modifier = Modifier.height(80.dp))
                 }
             }
+        }
         }
     }
 }
@@ -514,3 +740,72 @@ private fun RoleAllocationCard(
         }
     }
 }
+
+@Composable
+fun NavigationDrawer(
+    onDismiss: () -> Unit,
+    onNavigateToPerformanceCharts: () -> Unit,
+    onNavigateToWatchlist: () -> Unit,
+    onNavigateToBackupRestore: () -> Unit,
+    onNavigateToRealizedGains: () -> Unit,
+    onNavigateToStockAnalysis: () -> Unit,
+    onNavigateToDividendCalendar: () -> Unit
+) {
+    ModalDrawerSheet {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "Features",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Default.ShowChart, contentDescription = null) },
+                label = { Text("Performance Charts") },
+                selected = false,
+                onClick = onNavigateToPerformanceCharts
+            )
+            
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Default.Star, contentDescription = null) },
+                label = { Text("Watchlist") },
+                selected = false,
+                onClick = onNavigateToWatchlist
+            )
+            
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Default.Backup, contentDescription = null) },
+                label = { Text("Backup/Restore") },
+                selected = false,
+                onClick = onNavigateToBackupRestore
+            )
+            
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Default.TrendingUp, contentDescription = null) },
+                label = { Text("Realized Gains") },
+                selected = false,
+                onClick = onNavigateToRealizedGains
+            )
+            
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Default.Analytics, contentDescription = null) },
+                label = { Text("Stock Analysis") },
+                selected = false,
+                onClick = onNavigateToStockAnalysis
+            )
+            
+            NavigationDrawerItem(
+                icon = { Icon(Icons.Default.CalendarToday, contentDescription = null) },
+                label = { Text("Dividend Calendar") },
+                selected = false,
+                onClick = onNavigateToDividendCalendar
+            )
+        }
+    }
+}
+

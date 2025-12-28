@@ -1,7 +1,6 @@
 package com.egx.portfoliotracker.di
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.egx.portfoliotracker.data.local.CertificateDao
 import com.egx.portfoliotracker.data.local.CostHistoryDao
 import com.egx.portfoliotracker.data.local.DividendDao
@@ -10,7 +9,7 @@ import com.egx.portfoliotracker.data.local.HoldingDao
 import com.egx.portfoliotracker.data.local.PortfolioDatabase
 import com.egx.portfoliotracker.data.local.StockDao
 import com.egx.portfoliotracker.data.local.TransactionDao
-import com.egx.portfoliotracker.data.remote.StockAnalysisService
+import com.egx.portfoliotracker.data.local.WatchlistDao
 import com.egx.portfoliotracker.data.remote.StockPriceService
 import com.egx.portfoliotracker.data.repository.PortfolioRepository
 import dagger.Module
@@ -74,43 +73,43 @@ object AppModule {
     
     @Provides
     @Singleton
+    fun provideWatchlistDao(database: PortfolioDatabase): WatchlistDao {
+        return database.watchlistDao()
+    }
+    
+    @Provides
+    @Singleton
     fun provideStockPriceService(): StockPriceService {
         return StockPriceService()
     }
     
-    @Provides
-    @Singleton
-    fun provideStockAnalysisService(): StockAnalysisService {
-        return StockAnalysisService()
-    }
-    
-    @Provides
-    @Singleton
-    fun provideSharedPreferences(@ApplicationContext context: Context): SharedPreferences {
-        return context.getSharedPreferences("portfolio_prefs", Context.MODE_PRIVATE)
-    }
-    
-    @Provides
-    @Singleton
-    fun providePortfolioRepository(
-        holdingDao: HoldingDao,
-        stockDao: StockDao,
-        transactionDao: TransactionDao,
-        costHistoryDao: CostHistoryDao,
-        dividendDao: DividendDao,
-        certificateDao: CertificateDao,
-        expenseDao: ExpenseDao,
-        stockPriceService: StockPriceService
-    ): PortfolioRepository {
-        return PortfolioRepository(
-            holdingDao, 
-            stockDao, 
-            transactionDao, 
-            costHistoryDao, 
-            dividendDao,
-            certificateDao,
-            expenseDao,
-            stockPriceService
-        )
-    }
+            @Provides
+            @Singleton
+            fun providePortfolioRepository(
+                holdingDao: HoldingDao,
+                stockDao: StockDao,
+                transactionDao: TransactionDao,
+                costHistoryDao: CostHistoryDao,
+                dividendDao: DividendDao,
+                certificateDao: CertificateDao,
+                expenseDao: ExpenseDao,
+                watchlistDao: WatchlistDao,
+                stockPriceService: StockPriceService,
+                database: PortfolioDatabase,
+                @ApplicationContext context: Context
+            ): PortfolioRepository {
+                return PortfolioRepository(
+                    holdingDao,
+                    stockDao,
+                    transactionDao,
+                    costHistoryDao,
+                    dividendDao,
+                    certificateDao,
+                    expenseDao,
+                    watchlistDao,
+                    stockPriceService,
+                    database,
+                    context
+                )
+            }
 }

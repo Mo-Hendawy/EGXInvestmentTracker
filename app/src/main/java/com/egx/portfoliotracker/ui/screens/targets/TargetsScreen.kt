@@ -32,6 +32,8 @@ fun TargetsScreen(
     
     val totalPortfolioValue = summary?.totalValue ?: 0.0
     
+    var showAddTargetDialog by remember { mutableStateOf(false) }
+    
     // Filter holdings with target percentages and calculate current percentages
     val holdingsWithTargets = remember(holdings, totalPortfolioValue) {
         holdings
@@ -49,6 +51,11 @@ fun TargetsScreen(
                 )
             }
             .sortedByDescending { it.difference } // Above target first, then below target
+    }
+    
+    // Holdings without targets
+    val holdingsWithoutTargets = remember(holdings) {
+        holdings.filter { it.targetPercentage == null }
     }
     
     val belowTarget = holdingsWithTargets.filter { it.isBelowTarget }
@@ -73,6 +80,13 @@ fun TargetsScreen(
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = { showAddTargetDialog = true }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Add Target")
+            }
         }
     ) { paddingValues ->
         LazyColumn(
@@ -170,6 +184,18 @@ fun TargetsScreen(
                     }
                 }
             }
+        }
+        
+        // Add Target Dialog
+        if (showAddTargetDialog) {
+            AddTargetDialog(
+                holdings = holdings,
+                onDismiss = { showAddTargetDialog = false },
+                onSave = { holdingId, targetPercentage ->
+                    viewModel.updateHoldingTargetPercentage(holdingId, targetPercentage)
+                    showAddTargetDialog = false
+                }
+            )
         }
     }
 }
@@ -284,4 +310,94 @@ private fun TargetItem(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddTargetDialog(
+    holdings: List<Holding>,
+    onDismiss: () -> Unit,
+    onSave: (String, Double?) -> Unit
+) {
+    var selectedHoldingId by remember { mutableStateOf<String?>(null) }
+    var targetPercentageText by remember { mutableStateOf("") }
+    var showStockDropdown by remember { mutableStateOf(false) }
+    
+    val selectedHolding = holdings.find { it.id == selectedHoldingId }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Target Percentage") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Stock selection dropdown
+                ExposedDropdownMenuBox(
+                    expanded = showStockDropdown,
+                    onExpandedChange = { showStockDropdown = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedHolding?.let { "${it.stockSymbol} - ${it.stockNameEn}" } ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Select Stock") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = showStockDropdown) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    
+                    ExposedDropdownMenu(
+                        expanded = showStockDropdown,
+                        onDismissRequest = { showStockDropdown = false }
+                    ) {
+                        holdings.forEach { holding ->
+                            DropdownMenuItem(
+                                text = { Text("${holding.stockSymbol} - ${holding.stockNameEn}") },
+                                onClick = {
+                                    selectedHoldingId = holding.id
+                                    targetPercentageText = holding.targetPercentage?.toString() ?: ""
+                                    showStockDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+                
+                // Target percentage input
+                OutlinedTextField(
+                    value = targetPercentageText,
+                    onValueChange = { newValue ->
+                        // Allow only digits and one decimal point
+                        val filtered = newValue.filter { it.isDigit() || it == '.' }
+                        if (filtered.count { it == '.' } <= 1) {
+                            targetPercentageText = filtered
+                        }
+                    },
+                    label = { Text("Target Percentage (%)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    suffix = { Text("%") },
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val targetPercentage = targetPercentageText.toDoubleOrNull()
+                    if (selectedHoldingId != null) {
+                        onSave(selectedHoldingId!!, targetPercentage)
+                    }
+                },
+                enabled = selectedHoldingId != null && targetPercentageText.isNotEmpty()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
 

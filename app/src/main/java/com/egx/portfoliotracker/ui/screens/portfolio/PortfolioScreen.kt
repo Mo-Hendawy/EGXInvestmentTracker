@@ -14,6 +14,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.ModalNavigationDrawer
 import com.egx.portfoliotracker.data.model.Holding
 import com.egx.portfoliotracker.data.model.HoldingRole
 import com.egx.portfoliotracker.data.model.HoldingStatus
@@ -35,10 +38,19 @@ fun PortfolioScreen(
     onNavigateBack: () -> Unit,
     onNavigateToAddStock: () -> Unit,
     onNavigateToStockDetail: (String) -> Unit,
+    onNavigateToEditHolding: (String) -> Unit = {},
+    onNavigateToPerformanceCharts: () -> Unit = {},
+    onNavigateToWatchlist: () -> Unit = {},
+    onNavigateToBackupRestore: () -> Unit = {},
+    onNavigateToRealizedGains: () -> Unit = {},
+    onNavigateToStockAnalysis: () -> Unit = {},
+    onNavigateToDividendCalendar: () -> Unit = {},
     viewModel: PortfolioViewModel = hiltViewModel()
 ) {
+    var showMenu by remember { mutableStateOf(false) }
     val holdings by viewModel.holdings.collectAsState()
     val summary by viewModel.portfolioSummary.collectAsState()
+    val stockAnalyses by viewModel.stockAnalyses.collectAsState()
     
     var selectedRole by remember { mutableStateOf<HoldingRole?>(null) }
     var selectedStatus by remember { mutableStateOf<HoldingStatus?>(null) }
@@ -327,10 +339,37 @@ fun PortfolioScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(filteredHoldings, key = { it.id }) { holding ->
+                        var showEditMenu by remember { mutableStateOf(false) }
+                        val analysis = stockAnalyses.find { it.stockSymbol == holding.stockSymbol }
+                        
                         HoldingCard(
                             holding = holding,
-                            onClick = { onNavigateToStockDetail(holding.id) }
+                            recommendation = analysis?.recommendation,
+                            fairValue = analysis?.fairValue,
+                            onClick = { onNavigateToStockDetail(holding.id) },
+                            onLongClick = { showEditMenu = true }
                         )
+                        
+                        if (showEditMenu) {
+                            AlertDialog(
+                                onDismissRequest = { showEditMenu = false },
+                                title = { Text(holding.stockSymbol) },
+                                text = { Text("Choose an action") },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showEditMenu = false
+                                        onNavigateToEditHolding(holding.id)
+                                    }) {
+                                        Text("Edit Holding")
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showEditMenu = false }) {
+                                        Text("Cancel")
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
