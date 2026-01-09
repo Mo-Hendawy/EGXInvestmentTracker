@@ -83,33 +83,49 @@ object AppModule {
         return StockPriceService()
     }
     
-            @Provides
-            @Singleton
-            fun providePortfolioRepository(
-                holdingDao: HoldingDao,
-                stockDao: StockDao,
-                transactionDao: TransactionDao,
-                costHistoryDao: CostHistoryDao,
-                dividendDao: DividendDao,
-                certificateDao: CertificateDao,
-                expenseDao: ExpenseDao,
-                watchlistDao: WatchlistDao,
-                stockPriceService: StockPriceService,
-                database: PortfolioDatabase,
-                @ApplicationContext context: Context
-            ): PortfolioRepository {
-                return PortfolioRepository(
-                    holdingDao,
-                    stockDao,
-                    transactionDao,
-                    costHistoryDao,
-                    dividendDao,
-                    certificateDao,
-                    expenseDao,
-                    watchlistDao,
-                    stockPriceService,
-                    database,
-                    context
-                )
-            }
+    @Provides
+    @Singleton
+    fun provideTradingViewApi(): com.egx.portfoliotracker.data.remote.TradingViewApi {
+        return com.egx.portfoliotracker.data.remote.TradingViewApi()
+    }
+    
+    @Provides
+    @Singleton
+    fun provideMubasherScraper(): com.egx.portfoliotracker.data.remote.MubasherScraper {
+        return com.egx.portfoliotracker.data.remote.MubasherScraper()
+    }
+    
+    @Provides
+    @Singleton
+    fun providePortfolioRepository(
+        holdingDao: HoldingDao,
+        stockDao: StockDao,
+        transactionDao: TransactionDao,
+        costHistoryDao: CostHistoryDao,
+        dividendDao: DividendDao,
+        certificateDao: CertificateDao,
+        expenseDao: ExpenseDao,
+        watchlistDao: WatchlistDao,
+        stockPriceService: StockPriceService,
+        tradingViewApi: com.egx.portfoliotracker.data.remote.TradingViewApi,
+        mubasherScraper: com.egx.portfoliotracker.data.remote.MubasherScraper,
+        database: PortfolioDatabase,
+        @ApplicationContext context: Context
+    ): PortfolioRepository {
+        return PortfolioRepository(
+            holdingDao,
+            stockDao,
+            transactionDao,
+            costHistoryDao,
+            dividendDao,
+            certificateDao,
+            expenseDao,
+            watchlistDao,
+            stockPriceService,
+            tradingViewApi,
+            mubasherScraper,
+            database,
+            context
+        )
+    }
 }

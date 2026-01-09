@@ -189,6 +189,9 @@ class PortfolioViewModel @Inject constructor(
                     lastRefreshMessage = "Updated $count stocks"
                 ) }
                 
+                // Save portfolio snapshot after price refresh
+                repository.savePortfolioSnapshot()
+                
                 // Reload performance data after price refresh
                 loadPerformanceData()
             } catch (e: Exception) {
@@ -341,6 +344,10 @@ class PortfolioViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             repository.sellSharesFromHolding(holding, shares, price, notes)
+            // Refresh realized gains after selling
+            refreshRealizedGains()
+            // Refresh performance data
+            loadPerformanceData()
         }
     }
     
@@ -430,10 +437,48 @@ class PortfolioViewModel @Inject constructor(
         }
     }
     
+    // State for financial data refresh
+    private val _isRefreshingFinancials = MutableStateFlow(false)
+    val isRefreshingFinancials: StateFlow<Boolean> = _isRefreshingFinancials.asStateFlow()
+    
+    private val _financialsRefreshResult = MutableStateFlow<String?>(null)
+    val financialsRefreshResult: StateFlow<String?> = _financialsRefreshResult.asStateFlow()
+    
+    /**
+     * Fetches EPS and P/E data from Mubasher for all holdings
+     * This data is used for fair value calculations and stock analysis
+     */
+    fun refreshFinancialData() {
+        viewModelScope.launch {
+            _isRefreshingFinancials.value = true
+            _financialsRefreshResult.value = null
+            try {
+                val updatedCount = repository.refreshFinancialData()
+                _financialsRefreshResult.value = "Updated financial data for $updatedCount stocks"
+                // Refresh analyses after updating financial data
+                refreshStockAnalyses()
+            } catch (e: Exception) {
+                _financialsRefreshResult.value = "Error: ${e.message}"
+            } finally {
+                _isRefreshingFinancials.value = false
+            }
+        }
+    }
+    
+    fun clearFinancialsResult() {
+        _financialsRefreshResult.value = null
+    }
+    
     // ========== PORTFOLIO SNAPSHOTS ==========
     
     val portfolioSnapshots: StateFlow<List<PortfolioSnapshot>> = repository.getPortfolioSnapshots()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    
+    fun savePortfolioSnapshot() {
+        viewModelScope.launch {
+            repository.savePortfolioSnapshot()
+        }
+    }
     
     // ========== GET ALL STOCKS ==========
     

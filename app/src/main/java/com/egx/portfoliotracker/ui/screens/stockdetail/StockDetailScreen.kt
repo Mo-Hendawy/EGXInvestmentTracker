@@ -27,6 +27,7 @@ import com.egx.portfoliotracker.ui.components.RoleChip
 import com.egx.portfoliotracker.ui.components.StatusChip
 import com.egx.portfoliotracker.ui.theme.*
 import com.egx.portfoliotracker.viewmodel.PortfolioViewModel
+import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -55,15 +56,36 @@ fun StockDetailScreen(
     var showDividendDialog by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
     
+    // Track if we've seen the holding before (to distinguish initial load from deletion)
+    var hasSeenHolding by remember { mutableStateOf(false) }
+    
+    // Navigate back if holding was deleted (e.g., 100% sold)
+    LaunchedEffect(holding, holdings.size) {
+        if (holding != null) {
+            hasSeenHolding = true
+        } else if (hasSeenHolding && holdings.isNotEmpty()) {
+            // Holding was deleted after we saw it (e.g., 100% sold), navigate back
+            // Small delay to ensure transaction is saved
+            kotlinx.coroutines.delay(100)
+            onNavigateBack()
+        }
+    }
+    
     // Calculate total dividends for this holding
     val totalDividends = dividends.sumOf { it.totalAmount }
     
-    // Calculate realized gains for this stock
-    val stockRealizedGains = allRealizedGains.filter { it.stockSymbol == holding?.stockSymbol }
+    // Calculate realized gains for this stock (use stockSymbol from transactions if holding is null)
+    val stockSymbol = holding?.stockSymbol ?: transactions.firstOrNull()?.stockSymbol
+    val stockRealizedGains = if (stockSymbol != null) {
+        allRealizedGains.filter { it.stockSymbol == stockSymbol }
+    } else {
+        emptyList()
+    }
     val totalRealizedGains = stockRealizedGains.sumOf { it.profitLoss }
     val totalRealizedReturns = totalRealizedGains + totalDividends
     
     if (holding == null) {
+        // Show loading briefly, then navigate back (handled by LaunchedEffect above)
         Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
@@ -126,6 +148,11 @@ fun StockDetailScreen(
             onConfirm = { shares, price, notes ->
                 viewModel.sellShares(holding, shares, price, notes)
                 showSellDialog = false
+                // If selling 100%, the holding will be deleted and LaunchedEffect will navigate back
+                if (shares >= holding.shares) {
+                    // Don't wait, navigate back immediately for better UX
+                    // The LaunchedEffect will handle cleanup if needed
+                }
             }
         )
     }

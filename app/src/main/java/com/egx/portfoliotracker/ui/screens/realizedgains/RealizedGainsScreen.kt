@@ -26,6 +26,11 @@ fun RealizedGainsScreen(
     onNavigateBack: () -> Unit,
     viewModel: PortfolioViewModel = hiltViewModel()
 ) {
+    // Refresh realized gains when screen opens to pick up any missed transactions
+    LaunchedEffect(Unit) {
+        viewModel.refreshRealizedGains()
+    }
+    
     val realizedGains by viewModel.realizedGains.collectAsState(initial = emptyList())
     val totalRealizedGains = realizedGains.sumOf { it.profitLoss }
     

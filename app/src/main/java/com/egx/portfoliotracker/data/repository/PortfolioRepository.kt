@@ -15,6 +15,8 @@ import com.egx.portfoliotracker.data.model.Certificate
 import com.egx.portfoliotracker.data.model.CertificateStatus
 import com.egx.portfoliotracker.data.model.CertificateIncomeDetail
 import com.egx.portfoliotracker.data.model.MonthlyCertificateIncome
+import com.egx.portfoliotracker.data.remote.MubasherScraper
+import com.egx.portfoliotracker.data.remote.TradingViewApi
 import com.egx.portfoliotracker.data.remote.StockPriceResult
 import com.egx.portfoliotracker.data.remote.StockPriceService
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +36,8 @@ class PortfolioRepository @Inject constructor(
     private val expenseDao: ExpenseDao,
     private val watchlistDao: WatchlistDao,
     private val stockPriceService: StockPriceService,
+    private val tradingViewApi: TradingViewApi,
+    private val mubasherScraper: MubasherScraper,
     private val database: PortfolioDatabase,
     private val context: Context
 ) {
@@ -148,9 +152,25 @@ class PortfolioRepository @Inject constructor(
     }
     
     suspend fun deleteHolding(holding: Holding) {
+        // IMPORTANT: Don't delete SELL transactions - they're needed for realized gains!
+        // Only delete BUY transactions, keep SELL transactions for realized gains tracking
+        val transactions = transactionDao.getTransactionsByHolding(holding.id).first()
+        transactions.forEach { transaction ->
+            if (transaction.type == TransactionType.BUY) {
+                transactionDao.deleteTransaction(transaction)
+            }
+            // Keep SELL transactions - they're needed for realized gains even after holding is deleted
+        }
+        
         holdingDao.deleteHolding(holding)
-        transactionDao.deleteTransactionsByHolding(holding.id)
-        costHistoryDao.deleteHistoryByHolding(holding.id)
+        // Keep cost history for SELL transactions - needed for realized gains lookup
+        // Only delete cost history entries that aren't SELL type
+        val costHistories = costHistoryDao.getHistoryByHolding(holding.id).first()
+        costHistories.forEach { history ->
+            if (history.changeType != CostChangeType.SELL) {
+                costHistoryDao.deleteHistory(history)
+            }
+        }
         dividendDao.deleteDividendsByHolding(holding.id)
     }
     
@@ -230,16 +250,33 @@ class PortfolioRepository @Inject constructor(
         val totalCost = holdings.sumOf { it.totalCost }
         val totalDividends = getTotalDividends()
         
-        val snapshot = PortfolioSnapshot(
-            totalValue = totalValue,
-            totalCost = totalCost,
-            profitLoss = totalValue - totalCost,
-            profitLossPercent = if (totalCost > 0) ((totalValue - totalCost) / totalCost) * 100 else 0.0,
-            totalDividends = totalDividends,
-            holdingsCount = holdings.size
-        )
+        // Check if we already have a recent snapshot (within last hour) with same values
+        val oneHourAgo = System.currentTimeMillis() - (60 * 60 * 1000)
+        val recentSnapshot = dividendDao.getSnapshotAt(oneHourAgo)
         
-        dividendDao.insertSnapshot(snapshot)
+        // Only save if:
+        // 1. No recent snapshot exists, OR
+        // 2. Values have changed significantly (more than 0.1% difference)
+        val shouldSave = recentSnapshot == null || run {
+            val valueChange = kotlin.math.abs(totalValue - recentSnapshot.totalValue)
+            val valueChangePercent = if (recentSnapshot.totalValue > 0) {
+                (valueChange / recentSnapshot.totalValue) * 100
+            } else 0.0
+            valueChangePercent > 0.1 // Save if value changed by more than 0.1%
+        }
+        
+        if (shouldSave) {
+            val snapshot = PortfolioSnapshot(
+                totalValue = totalValue,
+                totalCost = totalCost,
+                profitLoss = totalValue - totalCost,
+                profitLossPercent = if (totalCost > 0) ((totalValue - totalCost) / totalCost) * 100 else 0.0,
+                totalDividends = totalDividends,
+                holdingsCount = holdings.size
+            )
+            
+            dividendDao.insertSnapshot(snapshot)
+        }
     }
     
     fun getRecentSnapshots(limit: Int = 100): Flow<List<PortfolioSnapshot>> = 
@@ -374,17 +411,8 @@ class PortfolioRepository @Inject constructor(
         val previousShares = holding.shares
         val newShares = previousShares - sharesToSell
         
-        if (newShares <= 0) {
-            deleteHolding(holding)
-            return
-        }
-        
-        val updatedHolding = holding.copy(
-            shares = newShares,
-            updatedAt = System.currentTimeMillis()
-        )
-        holdingDao.updateHolding(updatedHolding)
-        
+        // ALWAYS record the sell transaction FIRST (before potentially deleting)
+        // This ensures realized gains are tracked even for 100% sells
         transactionDao.insertTransaction(
             Transaction(
                 holdingId = holding.id,
@@ -393,10 +421,12 @@ class PortfolioRepository @Inject constructor(
                 shares = sharesToSell,
                 price = sellPrice,
                 total = sharesToSell * sellPrice,
-                notes = notes
+                notes = notes,
+                avgCostAtSale = holding.avgCost  // Store avg cost for realized gains calculation
             )
         )
         
+        // Record cost history
         costHistoryDao.insertHistory(
             CostHistory(
                 holdingId = holding.id,
@@ -404,13 +434,25 @@ class PortfolioRepository @Inject constructor(
                 previousAvgCost = holding.avgCost,
                 newAvgCost = holding.avgCost,
                 previousShares = previousShares,
-                newShares = newShares,
+                newShares = if (newShares <= 0) 0 else newShares,
                 changeType = CostChangeType.SELL,
                 transactionPrice = sellPrice,
                 transactionShares = sharesToSell,
                 notes = notes
             )
         )
+        
+        if (newShares <= 0) {
+            // 100% sold - delete the holding
+            deleteHolding(holding)
+        } else {
+            // Partial sell - update shares
+            val updatedHolding = holding.copy(
+                shares = newShares,
+                updatedAt = System.currentTimeMillis()
+            )
+            holdingDao.updateHolding(updatedHolding)
+        }
     }
     
     suspend fun adjustAverageCost(
@@ -856,17 +898,48 @@ class PortfolioRepository @Inject constructor(
     suspend fun getRealizedGains(): List<com.egx.portfoliotracker.data.model.RealizedGain> {
         val transactions = transactionDao.getAllTransactions().first()
         val holdings = getAllHoldings().first()
+        val costHistories = costHistoryDao.getAllHistory().first()
         
         val sellTransactions = transactions.filter { it.type == TransactionType.SELL }
         
         return sellTransactions.mapNotNull { sell ->
-            val holding = holdings.find { it.id == sell.holdingId } ?: return@mapNotNull null
-            val avgCost = holding.avgCost
+            // Try to get avgCost from:
+            // 1. avgCostAtSale field (new transactions) - PRIMARY SOURCE
+            // 2. Cost history for this transaction (match by holdingId, changeType, shares, and approximate price)
+            // 3. Current holding (if still exists)
+            val avgCost = sell.avgCostAtSale 
+                ?: run {
+                    // Find cost history entry for this sell transaction
+                    // Match by holdingId, changeType, shares, and price (with tolerance for floating point)
+                    costHistories.find { history ->
+                        history.holdingId == sell.holdingId && 
+                        history.changeType == CostChangeType.SELL &&
+                        history.transactionShares == sell.shares &&
+                        kotlin.math.abs(history.transactionPrice - sell.price) < 0.01 // Tolerance for floating point
+                    }?.previousAvgCost
+                }
+                ?: run {
+                    // Try matching by holdingId, changeType, and timestamp (within 5 seconds)
+                    costHistories.find { history ->
+                        history.holdingId == sell.holdingId && 
+                        history.changeType == CostChangeType.SELL &&
+                        kotlin.math.abs(history.timestamp - sell.timestamp) < 5000 // Within 5 seconds
+                    }?.previousAvgCost
+                }
+                ?: holdings.find { it.id == sell.holdingId }?.avgCost
+                ?: run {
+                    // Last resort: find any cost history for this holdingId with SELL type
+                    costHistories.filter { 
+                        it.holdingId == sell.holdingId && it.changeType == CostChangeType.SELL 
+                    }.maxByOrNull { it.timestamp }?.previousAvgCost
+                }
+                ?: return@mapNotNull null  // Can't calculate without avg cost
+            
             val profitLoss = (sell.price - avgCost) * sell.shares
             val profitLossPercent = if (avgCost > 0) ((sell.price - avgCost) / avgCost) * 100 else 0.0
             
             com.egx.portfoliotracker.data.model.RealizedGain(
-                stockSymbol = holding.stockSymbol,
+                stockSymbol = sell.stockSymbol,
                 sharesSold = sell.shares,
                 sellPrice = sell.price,
                 avgCost = avgCost,
@@ -878,6 +951,111 @@ class PortfolioRepository @Inject constructor(
     }
     
     // ========== STOCK ANALYSIS ==========
+    
+    /**
+     * Fetches EPS, P/E, and Book Value data for all holdings
+     * Strategy: TradingView API first (more accurate), Mubasher as fallback (wider coverage)
+     * Returns the number of successfully updated stocks
+     */
+    suspend fun refreshFinancialData(): Int {
+        val holdings = getAllHoldings().first()
+        val symbols = holdings.map { it.stockSymbol }
+        var updatedCount = 0
+        
+        // Step 1: Fetch from TradingView API (batch request - faster)
+        val tvData = try {
+            tradingViewApi.fetchStocksData(symbols)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyMap()
+        }
+        
+        android.util.Log.d("FinancialData", "TradingView returned data for ${tvData.size} stocks")
+        
+        // Step 2: Process each holding
+        for (holding in holdings) {
+            try {
+                val symbol = holding.stockSymbol
+                val tv = tvData[symbol]
+                
+                // Check if TradingView has data
+                val hasValidTvData = tv != null && (tv.eps != null || tv.bookValue != null)
+                
+                if (hasValidTvData && tv != null) {
+                    // Use TradingView data (preferred source)
+                    val updatedHolding = holding.copy(
+                        eps = tv.eps ?: holding.eps,
+                        peRatio = tv.peRatio ?: holding.peRatio,
+                        bookValue = tv.bookValue ?: holding.bookValue,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                    holdingDao.updateHolding(updatedHolding)
+                    updatedCount++
+                    android.util.Log.d("FinancialData", "$symbol: Updated from TradingView (EPS=${tv.eps}, BV=${tv.bookValue})")
+                } else {
+                    // Fallback to Mubasher scraping
+                    val mubasher = mubasherScraper.fetchStockFinancials(symbol)
+                    if (mubasher != null && (mubasher.eps != null || mubasher.bookValue != null)) {
+                        val updatedHolding = holding.copy(
+                            eps = mubasher.eps ?: holding.eps,
+                            peRatio = mubasher.peRatio ?: holding.peRatio,
+                            bookValue = mubasher.bookValue ?: holding.bookValue,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                        holdingDao.updateHolding(updatedHolding)
+                        updatedCount++
+                        android.util.Log.d("FinancialData", "$symbol: Updated from Mubasher (EPS=${mubasher.eps}, BV=${mubasher.bookValue})")
+                    } else {
+                        android.util.Log.d("FinancialData", "$symbol: No data from either source")
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        
+        return updatedCount
+    }
+    
+    /**
+     * Fetches EPS, P/E, and Book Value for a single stock
+     * Uses TradingView first, Mubasher as fallback
+     */
+    suspend fun refreshFinancialDataForStock(symbol: String): Boolean {
+        val holdings = getAllHoldings().first()
+        val holding = holdings.find { it.stockSymbol == symbol } ?: return false
+        
+        try {
+            // Try TradingView first
+            val tv = tradingViewApi.fetchStockData(symbol)
+            if (tv != null && (tv.eps != null || tv.bookValue != null)) {
+                val updatedHolding = holding.copy(
+                    eps = tv.eps ?: holding.eps,
+                    peRatio = tv.peRatio ?: holding.peRatio,
+                    bookValue = tv.bookValue ?: holding.bookValue,
+                    updatedAt = System.currentTimeMillis()
+                )
+                holdingDao.updateHolding(updatedHolding)
+                return true
+            }
+            
+            // Fallback to Mubasher
+            val mubasher = mubasherScraper.fetchStockFinancials(symbol)
+            if (mubasher != null && (mubasher.eps != null || mubasher.bookValue != null)) {
+                val updatedHolding = holding.copy(
+                    eps = mubasher.eps ?: holding.eps,
+                    peRatio = mubasher.peRatio ?: holding.peRatio,
+                    bookValue = mubasher.bookValue ?: holding.bookValue,
+                    updatedAt = System.currentTimeMillis()
+                )
+                holdingDao.updateHolding(updatedHolding)
+                return true
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return false
+    }
     
     suspend fun getStockAnalyses(): List<StockAnalysis> {
         val holdings = getAllHoldings().first()
@@ -941,8 +1119,7 @@ class PortfolioRepository @Inject constructor(
     // ========== PORTFOLIO SNAPSHOTS ==========
     
     fun getPortfolioSnapshots(): Flow<List<PortfolioSnapshot>> {
-        // This should be populated by taking snapshots periodically
-        // For now, return empty list - can be enhanced
-        return kotlinx.coroutines.flow.flowOf(emptyList())
+        // Return all snapshots from database, ordered by timestamp
+        return dividendDao.getRecentSnapshots(1000) // Get up to 1000 snapshots
     }
 }

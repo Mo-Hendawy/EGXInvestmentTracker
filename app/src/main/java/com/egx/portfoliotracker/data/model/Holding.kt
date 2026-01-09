@@ -23,9 +23,13 @@ data class Holding(
     val notes: String = "",
     val targetPercentage: Double? = null,  // Target allocation percentage (0-100)
     val fairValue: Double? = null,  // User-defined fair value override (optional)
-    val eps: Double? = null,  // Earnings Per Share (from company financials)
+    val eps: Double? = null,  // Current EPS (from TradingView/Mubasher)
     val growthRate: Double? = null,  // Expected annual EPS growth rate (%)
-    val peRatio: Double? = null,  // Current P/E ratio
+    val peRatio: Double? = null,  // Current P/E ratio (from TradingView/Mubasher)
+    val bookValue: Double? = null,  // Book Value Per Share
+    val normalizedEps: Double? = null,  // Normalized/Average EPS (user input)
+    val forwardEps: Double? = null,  // Forward EPS estimate (user input)
+    val lowCyclePE: Double? = null,  // Low-cycle P/E for base valuation (REQUIRED - no default)
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
@@ -36,16 +40,51 @@ data class Holding(
     val profitLossPercent: Double get() = if (totalCost > 0) (profitLoss / totalCost) * 100 else 0.0
     val isProfit: Boolean get() = profitLoss >= 0
     
-    // Calculate fair value using Benjamin Graham's formula: EPS × (8.5 + 2g)
-    // Where g is the expected growth rate
-    val calculatedFairValue: Double? get() {
-        val epsVal = eps ?: return null
-        val growth = growthRate ?: 5.0  // Default 5% growth if not specified
-        return epsVal * (8.5 + 2 * growth)
+    // ============================================
+    // EGX 3-TIER FAIR VALUE MODEL
+    // ============================================
+    
+    // 1. BASE FAIR VALUE (Conservative)
+    // Formula: Normalized EPS × Low-cycle P/E
+    // REQUIRES: normalizedEps (or eps) AND lowCyclePE - NO DEFAULTS
+    val baseFairValue: Double? get() {
+        val normEps = normalizedEps ?: eps ?: return null
+        val lowPE = lowCyclePE ?: return null  // REQUIRED - no default
+        if (normEps <= 0 || lowPE <= 0) return null
+        return normEps * lowPE
     }
     
-    // Use user-defined fair value if set, otherwise use calculated
-    val effectiveFairValue: Double? get() = fairValue ?: calculatedFairValue
+    // 2. GROWTH FAIR VALUE (Market-based)
+    // Formula: Forward EPS × Justified P/E
+    // Justified P/E = Current P/E ratio (REAL VALUE) - NO FORMULA, USE ACTUAL P/E
+    val justifiedPE: Double? get() {
+        // Use REAL current P/E ratio, not a formula
+        return peRatio?.takeIf { it > 0 }
+    }
+    
+    val growthFairValue: Double? get() {
+        // REQUIRES: forwardEps (or eps + growthRate) AND peRatio - NO DEFAULTS
+        val fwdEps = forwardEps ?: run {
+            val currEps = eps ?: return null
+            val growth = growthRate ?: return null
+            if (currEps <= 0) return null
+            currEps * (1 + growth / 100.0)
+        }
+        val justPE = peRatio ?: return null  // Use REAL P/E ratio, not formula
+        if (fwdEps <= 0 || justPE <= 0) return null
+        return fwdEps * justPE
+    }
+    
+    // 3. SIMPLE FAIR VALUE (P/B based fallback)
+    // Formula: Book Value × 2
+    val pbFairValue: Double? get() {
+        val bvps = bookValue ?: return null
+        if (bvps <= 0) return null
+        return bvps * 2.0
+    }
+    
+    // Use user-defined fair value override if set, otherwise use Growth FV, then Base FV
+    val effectiveFairValue: Double? get() = fairValue ?: growthFairValue ?: baseFairValue ?: pbFairValue
 }
 
 enum class HoldingRole(val displayName: String, val description: String) {
@@ -109,6 +148,7 @@ data class Transaction(
     val price: Double,
     val total: Double,
     val notes: String = "",
+    val avgCostAtSale: Double? = null,  // For SELL transactions: avg cost at time of sale
     val timestamp: Long = System.currentTimeMillis()
 )
 

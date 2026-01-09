@@ -28,7 +28,7 @@ import com.egx.portfoliotracker.data.model.Watchlist
         Expense::class,
         Watchlist::class
     ],
-    version = 11,
+    version = 14,
     exportSchema = true
 )
 abstract class PortfolioDatabase : RoomDatabase() {
@@ -208,6 +208,34 @@ abstract class PortfolioDatabase : RoomDatabase() {
             }
         }
         
+        // Migration from version 11 to 12 (add bookValue to holdings)
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add bookValue column for Graham's Number calculation
+                database.execSQL("ALTER TABLE holdings ADD COLUMN bookValue REAL DEFAULT NULL")
+            }
+        }
+        
+        // Migration from version 12 to 13 (add 3-tier fair value fields)
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add normalizedEps column (user's normalized/average EPS)
+                database.execSQL("ALTER TABLE holdings ADD COLUMN normalizedEps REAL DEFAULT NULL")
+                // Add forwardEps column (user's forward EPS estimate)
+                database.execSQL("ALTER TABLE holdings ADD COLUMN forwardEps REAL DEFAULT NULL")
+                // Add lowCyclePE column (low-cycle P/E for base valuation)
+                database.execSQL("ALTER TABLE holdings ADD COLUMN lowCyclePE REAL DEFAULT NULL")
+            }
+        }
+        
+        // Migration from version 13 to 14 (add avgCostAtSale to transactions for realized gains)
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Add avgCostAtSale column to track avg cost at time of sale
+                database.execSQL("ALTER TABLE transactions ADD COLUMN avgCostAtSale REAL DEFAULT NULL")
+            }
+        }
+        
         // Migration from version 1 to 3 (for users who still have v1)
         private val MIGRATION_1_3 = object : Migration(1, 3) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -238,7 +266,7 @@ abstract class PortfolioDatabase : RoomDatabase() {
                     PortfolioDatabase::class.java,
                     "portfolio_database"
                 )
-                .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                .addMigrations(MIGRATION_1_3, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
                 // Removed fallbackToDestructiveMigration() to prevent data loss
                 .build()
                 INSTANCE = instance

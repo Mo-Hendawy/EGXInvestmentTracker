@@ -40,6 +40,17 @@ fun PerformanceChartsScreen(
     val portfolioSnapshots by viewModel.portfolioSnapshots.collectAsState(initial = emptyList())
     val holdings by viewModel.holdings.collectAsState()
     
+    // Save a snapshot when screen opens (if we have holdings but no snapshots)
+    LaunchedEffect(holdings.size, portfolioSnapshots.size) {
+        if (holdings.isNotEmpty() && portfolioSnapshots.isEmpty()) {
+            // Create initial snapshot
+            viewModel.savePortfolioSnapshot()
+        } else if (holdings.isNotEmpty()) {
+            // Save current snapshot (will only save if different from last one)
+            viewModel.savePortfolioSnapshot()
+        }
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(
